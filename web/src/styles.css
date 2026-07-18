@@ -296,19 +296,19 @@ tbody tr:hover { background: #fafcfc; }
 .file-name__icon { width: 15px; height: 15px; flex: 0 0 15px; color: var(--accent); }
 .subscription-list-wrap { overflow-x: hidden; }
 .subscription-table, .subscription-table.data-table--wide { width: 100%; min-width: 0; table-layout: fixed; }
-.subscription-table th, .subscription-table td { min-width: 0; padding-right: 7px; padding-left: 7px; overflow-wrap: anywhere; font-size: 11px; }
-.subscription-table th:nth-child(1), .subscription-table td:nth-child(1) { width: 38px; }
-.subscription-table th:nth-child(2), .subscription-table td:nth-child(2) { width: 20%; }
-.subscription-table th:nth-child(3), .subscription-table td:nth-child(3) { width: 82px; }
-.subscription-table th:nth-child(4), .subscription-table td:nth-child(4) { width: 66px; }
-.subscription-table th:nth-child(5), .subscription-table td:nth-child(5) { width: 70px; }
+.subscription-table th, .subscription-table td { min-width: 0; padding-right: 7px; padding-left: 7px; overflow: hidden; overflow-wrap: anywhere; font-size: 11px; }
+.subscription-table th:nth-child(1), .subscription-table td:nth-child(1) { width: 4%; }
+.subscription-table th:nth-child(2), .subscription-table td:nth-child(2) { width: 21%; }
+.subscription-table th:nth-child(3), .subscription-table td:nth-child(3) { width: 9%; }
+.subscription-table th:nth-child(4), .subscription-table td:nth-child(4) { width: 8%; }
+.subscription-table th:nth-child(5), .subscription-table td:nth-child(5) { width: 8%; }
 .subscription-table th:nth-child(6), .subscription-table td:nth-child(6),
-.subscription-table th:nth-child(7), .subscription-table td:nth-child(7) { width: 13%; }
-.subscription-table th:nth-child(8), .subscription-table td:nth-child(8) { width: 18%; }
-.subscription-table th:nth-child(9), .subscription-table td:nth-child(9) { width: 122px; }
+.subscription-table th:nth-child(7), .subscription-table td:nth-child(7) { width: 11%; }
+.subscription-table th:nth-child(8), .subscription-table td:nth-child(8) { width: 16%; }
+.subscription-table th:nth-child(9), .subscription-table td:nth-child(9) { width: 12%; }
 .subscription-table .quota-cell { min-width: 0; }
 .subscription-table .file-name { max-width: 100%; }
-.subscription-table .table-actions { gap: 3px; }
+.subscription-table .table-actions { min-width: 0; flex-wrap: wrap; gap: 3px; }
 .subscription-table .button--small { min-height: 29px; padding-right: 6px; padding-left: 6px; }
 .subscription-email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .selection-column { width: 42px; min-width: 42px !important; padding-right: 8px; padding-left: 12px; text-align: center; }

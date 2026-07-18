@@ -2,7 +2,7 @@
 
 > v1.0.2 · Local-first operations console for CPA credentials, offer monitoring, quota checks, and SMS verification workflows.
 
-[中文](#中文) · [English](#english) · [更新日志](CHANGELOG.md) · [安全策略](SECURITY.md) · [贡献指南](CONTRIBUTING.md)
+[中文](#中文) · [English](#english) · [更新日志](CHANGELOG.md) · [安全策略](SECURITY.md) · [贡献指南](CONTRIBUTING.md) · [GitHub](https://github.com/2921323707/CPA_Orbit)
 
 ## 中文
 
