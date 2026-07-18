@@ -1,0 +1,39 @@
+package scraper
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestParseOffersFiltersSortsAndExtracts(t *testing.T) {
+	html := `<table><tbody>
+<tr><td>在售 库存 20</td><td>甲商家 链动小铺 / SHOP_1</td><td>普通 Team</td><td>¥0.10</td><td>2026-01-01</td><td></td><td><a href="/item/nope">购买</a></td></tr>
+<tr><td>售罄</td><td>乙商家</td><td>K12 CPA</td><td>¥0.20</td><td>2026-01-01</td><td></td><td><a href="/item/sold">购买</a></td></tr>
+<tr><td>有货 8</td><td>奥特曼严选链动小铺 / PAXOVOVJ</td><td>1个 team k12子号 反代</td><td>¥0.46</td><td>2026-07-18 15:10</td><td></td><td><a href="https://pay.ldxp.cn/item/orahrw">前往购买</a></td></tr>
+<tr><td>在售 3</td><td>JSON店</td><td>CPA JSON 文件</td><td>¥0.43</td><td>2026-07-18 15:11</td><td></td><td><a href="/item/cheap">购买</a></td></tr>
+</tbody></table>`
+	offers, err := ParseOffers(strings.NewReader(html), "https://priceai.cc/products/chatgpt-team-business")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(offers) != 2 {
+		t.Fatalf("got %d offers, want 2", len(offers))
+	}
+	if offers[0].ItemID != "cheap" || offers[0].Price != 0.43 {
+		t.Fatalf("unexpected first offer: %+v", offers[0])
+	}
+	if offers[1].Merchant != "奥特曼严选" || offers[1].ShopID != "PAXOVOVJ" {
+		t.Fatalf("merchant extraction failed: %+v", offers[1])
+	}
+}
+
+func TestParseGPTPlusOffersDoesNotApplyK12TitleFilter(t *testing.T) {
+	html := `<table><tbody><tr><td>有货 库存 6</td><td>Plus 商家 链动小铺 / PLUS_1</td><td>ChatGPT Plus 日抛成品号</td><td>¥3.50</td><td>2026-07-18 19:17</td><td></td><td><a href="/item/plus-1">购买</a></td></tr></tbody></table>`
+	offers, err := ParseOffersWithFilter(strings.NewReader(html), "https://priceai.cc/products/chatgpt-plus", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(offers) != 1 || offers[0].Price != 3.5 || offers[0].ItemID != "plus-1" {
+		t.Fatalf("unexpected GPT Plus offer: %+v", offers)
+	}
+}

@@ -1,0 +1,33 @@
+name: Bug report
+description: Report a reproducible CPA Orbit defect without including secrets.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Never attach CPA JSON, API keys, OAuth tokens, or private account data.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: v1.0.2
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true

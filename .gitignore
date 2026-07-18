@@ -1,0 +1,43 @@
+# Go
+server/cpa-monitor.exe
+server/*.test
+
+# Local toolchains
+.tools/
+.agents/
+.claude/
+
+# Verification captures
+.verification/
+
+# Node
+web/node_modules/
+web/dist/
+
+# Runtime state
+data/*.json
+data/*.tmp
+cpa/.runtime/
+
+# Imported credentials (contain bearer tokens)
+k12/**/*.json
+
+# Integrated mature CLIProxyAPI runtime and private data
+cpa/app/cli-proxy-api.exe
+cpa/app/config.yaml
+cpa/auths/
+cpa/backups/
+cpa/logs/
+cpa/legacy-data/
+
+# Local secrets
+.env
+.env.local
+server/.env
+web/.env.local
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
