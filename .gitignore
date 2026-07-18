@@ -13,6 +13,7 @@ server/*.test
 # Node
 web/node_modules/
 web/dist/
+web/package.json.md5
 
 # Runtime state
 data/*.json

@@ -32,6 +32,10 @@ Windows PowerShell：
 - Web Console：`http://127.0.0.1:5173/`
 - 文档：`http://127.0.0.1:5173/docs`
 
+### 桌面应用
+
+`app/` 提供基于 Wails 的轻量桌面包，不携带 Chromium 或 Node.js 运行时。Windows 双击 `app/build-windows.cmd` 即可生成 `app/build/bin/CPAOrbit.exe`；macOS 在 Mac 上执行 `./app/build-macos.sh` 可生成 `.app` 和分发 ZIP。桌面版默认使用系统用户配置目录，也支持通过可编辑 JSON 配置使用相对路径，实现 Windows 与 macOS 间迁移。详见 [app/README.md](app/README.md)。
+
 ### 安全边界
 
 默认仅监听回环地址。CPA JSON、OAuth token、本地 API key、鲁班 API key、`data/`、`k12/` 和 `cpa/auths/` 都不应提交到仓库。详细规则见 [SECURITY.md](SECURITY.md)。
@@ -68,6 +72,10 @@ CPA Orbit aggregates, records, and redirects only. It is not affiliated with eit
 ```powershell
 .\start-dev.ps1
 ```
+
+### Desktop application
+
+The lightweight Wails host lives in `app/`. Double-click `app/build-windows.cmd` to create the Windows EXE, or run `./app/build-macos.sh` on macOS to create an `.app` and distributable ZIP. See [app/README.md](app/README.md) for portable configuration, migration, signing, and build requirements.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a change. This repository includes third-party software; review [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) before redistribution.
 
