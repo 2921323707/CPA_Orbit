@@ -13,6 +13,7 @@ All notable CPA Orbit changes are documented here. Versions follow Semantic Vers
 - 新增鲁班余额、国家/服务价格、获取号码、3 秒验证码轮询和释放号码。
 - 新增深色模式、隐藏页面滚动条、艺术加载动画、全局项目 logo 和中英语言基础层。
 - 项目命名统一为 CPA Orbit，并补齐开源贡献、安全、支持、许可证和模板规范。
+- 感谢 PriceAI 的公开商品与价格数据，以及链动小铺 LXDP 的支付跳转与订单查询支持。
 
 ### English
 
@@ -23,3 +24,4 @@ All notable CPA Orbit changes are documented here. Versions follow Semantic Vers
 - Added Luban balance, country/service pricing, number acquisition, three-second code polling, and release.
 - Added dark mode, hidden viewport scrollbar, orbital loading motion, a global project mark, and bilingual shell infrastructure.
 - Standardized the CPA Orbit name and added open-source contribution, security, support, license, and repository templates.
+- Thanks to PriceAI for public offer data and LXDP for checkout and order-query support.

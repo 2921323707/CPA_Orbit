@@ -1,12 +1,12 @@
 # CPA Orbit
 
-> v1.0.2 · Local-first operations console for CPA credentials, offer monitoring, quota checks, and SMS verification workflows.
+> v1.0.2 · A quiet, local-first workspace from K12 price radar to CPA proxy operations.
 
 [中文](#中文) · [English](#english) · [更新日志](CHANGELOG.md) · [安全策略](SECURITY.md) · [贡献指南](CONTRIBUTING.md) · [GitHub](https://github.com/2921323707/CPA_Orbit)
 
 ## 中文
 
-CPA Orbit 是一套本地优先的运营控制台，将 CPA/Codex 凭据归档、CLIProxyAPI 运行池、K12/GPT Plus 报价、额度检查、提醒和鲁班接码集中到同一工作流中。
+CPA Orbit 不想做成一个庞大的后台。它只把几件经常要来回切换的事放在一起：看 K12 价格、归档订阅、检查额度、维护 CPA 代理，再顺手处理 GPT Plus 和接码流程。数据留在本机，目录清楚，出了问题也能沿着记录回溯。
 
 ### 核心功能
 
@@ -36,9 +36,16 @@ Windows PowerShell：
 
 默认仅监听回环地址。CPA JSON、OAuth token、本地 API key、鲁班 API key、`data/`、`k12/` 和 `cpa/auths/` 都不应提交到仓库。详细规则见 [SECURITY.md](SECURITY.md)。
 
+### 数据来源与致谢
+
+- 报价与商品信息来自 [PriceAI](https://priceai.cc/)。感谢其公开的商品数据与价格查询入口，让 K12 / GPT Plus 的历史走势有了可靠来源。
+- 支付跳转与订单查询来自 [链动小铺 LXDP](https://pay.ldxp.cn/)。感谢其提供的商品支付与订单查询链路。
+
+CPA Orbit 只是聚合、记录和跳转工具，不代表上述平台或商家；价格、库存、支付和售后以来源平台页面为准。
+
 ## English
 
-CPA Orbit is a local-first operations console that unifies CPA/Codex credential archives, the CLIProxyAPI runtime pool, K12/GPT Plus offer monitoring, quota checks, alerts, and Luban SMS verification.
+CPA Orbit is a quiet, local-first workspace for the parts of AI subscription operations that usually get scattered across tabs: K12 price discovery, subscription archives, quota checks, CPA proxy runtime, GPT Plus, and SMS verification.
 
 ### Highlights
 
@@ -48,6 +55,13 @@ CPA Orbit is a local-first operations console that unifies CPA/Codex credential 
 - Real K12 and GPT Plus price collection with 14-day history and dual-series comparison.
 - Backend-only Luban credentials with balance, catalog pricing, number acquisition, three-second code polling, and release.
 - Dark mode, bilingual application shell, restrained orbital loading motion, responsive layouts, and accessible status indicators.
+
+### Data sources and thanks
+
+- Offer and price data: [PriceAI](https://priceai.cc/). Thank you for the public product data and price-query surface used by the K12 / GPT Plus history views.
+- Payment redirects and order lookup: [LXDP](https://pay.ldxp.cn/). Thank you for providing the checkout and order-query path used by the console.
+
+CPA Orbit aggregates, records, and redirects only. It is not affiliated with either service; live price, stock, payment, and after-sales terms remain subject to the source platform.
 
 ### Development
 
