@@ -47,7 +47,7 @@ const sections = [
       <section class="docs-hero panel">
         <div class="docs-hero__icon"><BookOpenText :size="28" /></div>
         <div>
-          <p class="docs-eyebrow">CPA ORBIT · v1.0.2</p>
+          <p class="docs-eyebrow">CPA ORBIT · v1.1.0</p>
           <h1>CPA Orbit 控制台说明</h1>
           <p>从低价发现、支付跳转、CPA JSON 归档，到 CLIProxyAPI 热加载和连通性检查的完整操作手册。</p>
         </div>
@@ -59,7 +59,7 @@ const sections = [
 
       <section id="changelog" class="panel docs-section docs-changelog">
         <div class="docs-section__heading docs-section__heading--split">
-          <div class="docs-section__heading-main"><History :size="21" /><div><h2>{{ changelogLanguage === 'zh' ? 'v1.0.2 更新日志' : 'v1.0.2 Release Notes' }}</h2><p>{{ changelogLanguage === 'zh' ? '2026-07-18 · 今晚完成的整合、可靠性与体验升级。' : '2026-07-18 · Integration, reliability, and experience improvements completed tonight.' }}</p></div></div>
+          <div class="docs-section__heading-main"><History :size="21" /><div><h2>{{ changelogLanguage === 'zh' ? 'v1.1.0 更新日志' : 'v1.1.0 Release Notes' }}</h2><p>{{ changelogLanguage === 'zh' ? '2026-07-19 · 桌面集成、可靠性与体验升级。' : '2026-07-19 · Desktop integration, reliability, and experience improvements.' }}</p></div></div>
           <div class="docs-language-switch" role="group" aria-label="Changelog language">
             <Languages :size="14" />
             <button type="button" :class="{ 'is-active': changelogLanguage === 'zh' }" @click="changelogLanguage = 'zh'">中文</button>
@@ -73,7 +73,7 @@ const sections = [
           <article><span>03</span><div><strong>双报价监控</strong><p>K12 与 GPT Plus 同周期真实抓取，保存最近 14 天平均价格历史；总览支持短周期、长周期和双线对照。</p></div></article>
           <article><span>04</span><div><strong>鲁班接码完整流程</strong><p>密钥仅保存在后端，支持余额、国家、服务单价、获取号码、3 秒验证码轮询及释放号码。</p></div></article>
           <article><span>05</span><div><strong>控制台体验升级</strong><p>所有完整数据表统一每页 10 条；加入深色模式、隐藏页面滚动条、轨道式艺术加载、响应式布局与全局项目标志。</p></div></article>
-          <article><span>06</span><div><strong>开源发布基础</strong><p>项目更名为 CPA Orbit，版本统一为 v1.0.2，加入中英语言层、GitHub 入口预留、双语日志、安全和贡献规范。</p></div></article>
+          <article><span>06</span><div><strong>开源发布基础</strong><p>版本统一为 v1.1.0，并补齐桌面构建、自动化测试、GitHub 社区入口、安全和贡献规范。</p></div></article>
         </div>
         <div v-else class="release-notes">
           <article><span>01</span><div><strong>Subscriptions as the source of truth</strong><p>Removed the split active-pool model and made the CPA runtime directory a rebuildable projection of archived subscriptions.</p></div></article>
@@ -81,7 +81,7 @@ const sections = [
           <article><span>03</span><div><strong>Dual offer monitoring</strong><p>K12 and GPT Plus now share a real refresh schedule, retain 14 days of average-price history, and support short, long, or dual-series comparison.</p></div></article>
           <article><span>04</span><div><strong>Complete Luban SMS flow</strong><p>Backend-only API key storage, balance and catalog lookup, number acquisition, three-second verification-code polling, and explicit release.</p></div></article>
           <article><span>05</span><div><strong>Console experience</strong><p>Ten-row pagination, dark mode, hidden viewport scrollbar, orbital loading motion, responsive layouts, and a unified project mark.</p></div></article>
-          <article><span>06</span><div><strong>Open-source release foundation</strong><p>Renamed the project to CPA Orbit, standardized v1.0.2, and added bilingual UI infrastructure, release notes, security, and contribution policies.</p></div></article>
+          <article><span>06</span><div><strong>Release foundation</strong><p>Standardized v1.1.0 and completed desktop builds, automated tests, GitHub community entry points, security, and contribution policies.</p></div></article>
         </div>
       </section>
 
@@ -197,7 +197,7 @@ const sections = [
       </section>
 
       <footer class="docs-footer">
-        <KeyRound :size="16" />CPA Orbit v1.0.2 · 本文档不会展示任何密钥；敏感配置请只在设置页填写。
+        <KeyRound :size="16" />CPA Orbit v1.1.0 · 本文档不会展示任何密钥；敏感配置请只在设置页填写。
       </footer>
     </article>
   </div>

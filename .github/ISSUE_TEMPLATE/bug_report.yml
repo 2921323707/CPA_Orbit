@@ -20,7 +20,7 @@ body:
     id: version
     attributes:
       label: CPA Orbit version or commit
-      placeholder: v1.0.2 or 1a2b3c4
+      placeholder: v1.1.0 or 1a2b3c4
     validations:
       required: true
   - type: dropdown

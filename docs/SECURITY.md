@@ -2,7 +2,7 @@
 
 ## Supported version
 
-Security fixes target the latest release, currently **v1.0.2**, and the current `main` branch.
+Security fixes target the latest release, currently **v1.1.0**, and the current `main` branch.
 
 ## Private reporting
 

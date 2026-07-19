@@ -16,6 +16,7 @@ This directory is the canonical home for project documentation. The repository r
 ## Releases
 
 - [Changelog](releases/CHANGELOG.md)
+- [v1.1.0 release notes](releases/v1.1.0.md)
 - [v1.0.2 release notes](releases/v1.0.2.md)
 
 ## Community

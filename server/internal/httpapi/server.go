@@ -18,7 +18,7 @@ import (
 )
 
 const maxUploadBytes = 2 << 20
-const appVersion = "1.0.2"
+const appVersion = "1.1.0"
 
 type Server struct {
 	settings       *config.Store

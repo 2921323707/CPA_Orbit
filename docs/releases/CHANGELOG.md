@@ -2,7 +2,9 @@
 
 All notable CPA Orbit changes are documented here. Versions follow Semantic Versioning.
 
-## [Unreleased] - 2026-07-19
+## [Unreleased]
+
+## [1.1.0] - 2026-07-19
 
 ### Added
 

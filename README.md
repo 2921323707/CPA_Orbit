@@ -5,7 +5,7 @@
 
   <p>
     <a href="https://github.com/2921323707/CPA_Orbit/actions"><img src="https://img.shields.io/badge/CI-configured-2088FF?style=flat-square&amp;logo=githubactions&amp;logoColor=white" alt="CI configured" /></a>
-    <a href="https://github.com/2921323707/CPA_Orbit/releases"><img src="https://img.shields.io/badge/version-v1.0.2-2563EB?style=flat-square" alt="Version 1.0.2" /></a>
+    <a href="https://github.com/2921323707/CPA_Orbit/releases"><img src="https://img.shields.io/badge/version-v1.1.0-2563EB?style=flat-square" alt="Version 1.1.0" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22C55E?style=flat-square" alt="MIT License" /></a>
     <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?style=flat-square&amp;logo=go&amp;logoColor=white" alt="Go 1.25 or newer" /></a>
     <a href="https://vuejs.org/"><img src="https://img.shields.io/badge/Vue-3.5-42B883?style=flat-square&amp;logo=vuedotjs&amp;logoColor=white" alt="Vue 3.5" /></a>
