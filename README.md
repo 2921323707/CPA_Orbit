@@ -37,7 +37,7 @@ CPA Orbit brings the operational paths that normally live across scripts, browse
 
 <p align="center">
   <a href="docs/assets/showcase/showcase-grid.png">
-    <img src="docs/assets/showcase/showcase-grid.png" width="100%" alt="CPA Orbit application showcase: overview, GPT Plus verification, subscriptions, and documentation" />
+    <img src="docs/assets/showcase/showcase-grid.png" width="100%" alt="Labeled CPA Orbit showcase with uncropped Overview, GPT Plus and SMS, Subscriptions, and Documentation screenshots" />
   </a>
 </p>
 
