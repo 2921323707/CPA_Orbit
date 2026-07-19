@@ -6,7 +6,7 @@ require (
 	cpa-monitor/server v0.0.0
 	github.com/getlantern/systray v1.2.2
 	github.com/wailsapp/wails/v2 v2.13.0
-	golang.org/x/sys v0.44.0
+	golang.org/x/sys v0.47.0
 )
 
 require (
