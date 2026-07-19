@@ -1,14 +1,17 @@
 <div align="center">
-  <img src="app/build/appicon.png" width="132" alt="CPA Orbit logo" />
+  <img src="app/build/appicon.png" width="112" alt="CPA Orbit logo" />
   <h1>CPA Orbit</h1>
   <p><strong>A local-first operations console for AI subscriptions, price intelligence, quota health, and CPA proxy runtime.</strong></p>
 
   <p>
     <a href="http://165.154.205.54/cpa_orbit/">
-      <img src="https://img.shields.io/badge/OPEN_ONLINE_DOCUMENTATION-0B6159?style=for-the-badge&amp;logo=readthedocs&amp;logoColor=white" alt="Open CPA Orbit online documentation" />
+      <img src="https://img.shields.io/badge/Documentation-Open_online_docs-0B6159?style=for-the-badge&amp;logo=readthedocs&amp;logoColor=white" alt="Open CPA Orbit online documentation" />
+    </a>
+    <a href="https://github.com/2921323707/CPA_Orbit/releases/tag/v1.1.0">
+      <img src="https://img.shields.io/badge/Windows-Download_v1.1.0-2563EB?style=for-the-badge&amp;logo=windows11&amp;logoColor=white" alt="Download CPA Orbit v1.1.0 for Windows" />
     </a>
   </p>
-  <p><a href="http://165.154.205.54/cpa_orbit/"><strong>English · 简体中文 · Searchable guides, architecture, deployment, and releases</strong></a></p>
+  <p><sub>English · 简体中文 · Searchable guides · Architecture · Deployment · Release notes</sub></p>
 
   <p>
     <a href="https://github.com/2921323707/CPA_Orbit/actions"><img src="https://img.shields.io/badge/CI-configured-2088FF?style=flat-square&amp;logo=githubactions&amp;logoColor=white" alt="CI configured" /></a>
@@ -24,7 +27,6 @@
     <a href="#showcase">Showcase</a> ·
     <a href="#architecture">Architecture</a> ·
     <a href="#quick-start">Quick start</a> ·
-    <a href="http://165.154.205.54/cpa_orbit/">Online Documentation</a> ·
     <a href="docs/CONTRIBUTING.md">Contributing</a>
   </p>
 </div>
