@@ -89,3 +89,12 @@ pattern all:frontend/dist: no matching files found
 ## Release recommendation
 
 The tested feature branch is suitable for integration into `main` after committing this report and test infrastructure. The documented exclusions are non-blocking for the portable Windows merge but should remain visible in later release work.
+
+## Post-merge verification
+
+The source and verification branches were integrated locally with explicit merge commits:
+
+- `6f40009` — merge `origin/feature/wails-desktop-app` into `main`;
+- `7007617` — merge `codex/wails-integration-tests` into `main`.
+
+The complete default `.\tests\run-all.ps1` suite was then executed from merged `main`. Server tests/vet, desktop tests/vet, both frontend builds, Playwright 3/3, and the Windows portable package all passed. Generated package, frontend, Wails binding, and Playwright artifacts were removed afterward with an explicit path-scoped ignored-file cleanup.
