@@ -3,14 +3,23 @@
   <h1>CPA Orbit</h1>
   <p><strong>A local-first operations console for AI subscriptions, price intelligence, quota health, and CPA proxy runtime.</strong></p>
 
-  [![CI](https://github.com/2921323707/CPA_Orbit/actions/workflows/ci.yml/badge.svg)](https://github.com/2921323707/CPA_Orbit/actions/workflows/ci.yml)
-  [![Release](https://img.shields.io/github/v/release/2921323707/CPA_Orbit?display_name=tag&sort=semver)](https://github.com/2921323707/CPA_Orbit/releases)
-  [![License](https://img.shields.io/github/license/2921323707/CPA_Orbit)](LICENSE)
-  [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](https://go.dev/)
-  [![Vue](https://img.shields.io/badge/Vue-3.5-42B883?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
-  [![Wails](https://img.shields.io/badge/Wails-2.13-DF0000?logo=wails&logoColor=white)](https://wails.io/)
+  <p>
+    <a href="https://github.com/2921323707/CPA_Orbit/actions"><img src="https://img.shields.io/badge/CI-configured-2088FF?style=flat-square&amp;logo=githubactions&amp;logoColor=white" alt="CI configured" /></a>
+    <a href="https://github.com/2921323707/CPA_Orbit/releases"><img src="https://img.shields.io/badge/version-v1.0.2-2563EB?style=flat-square" alt="Version 1.0.2" /></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22C55E?style=flat-square" alt="MIT License" /></a>
+    <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?style=flat-square&amp;logo=go&amp;logoColor=white" alt="Go 1.25 or newer" /></a>
+    <a href="https://vuejs.org/"><img src="https://img.shields.io/badge/Vue-3.5-42B883?style=flat-square&amp;logo=vuedotjs&amp;logoColor=white" alt="Vue 3.5" /></a>
+    <a href="https://wails.io/"><img src="https://img.shields.io/badge/Wails-2.13-DF0000?style=flat-square" alt="Wails 2.13" /></a>
+  </p>
 
-  [Overview](#overview) · [Showcase](#showcase) · [Architecture](#architecture) · [Quick start](#quick-start) · [Documentation](#documentation) · [Contributing](docs/CONTRIBUTING.md)
+  <p>
+    <a href="#overview">Overview</a> ·
+    <a href="#showcase">Showcase</a> ·
+    <a href="#architecture">Architecture</a> ·
+    <a href="#quick-start">Quick start</a> ·
+    <a href="#documentation">Documentation</a> ·
+    <a href="docs/CONTRIBUTING.md">Contributing</a>
+  </p>
 </div>
 
 ## Overview
