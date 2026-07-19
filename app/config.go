@@ -12,7 +12,9 @@ import (
 
 const (
 	defaultWindowWidth  = 1280
-	defaultWindowHeight = 820
+	defaultWindowHeight = 800
+	minimumWindowWidth  = 1024
+	minimumWindowHeight = 640
 	configFileName      = "cpa-orbit.config.json"
 )
 
@@ -87,8 +89,8 @@ func loadDesktopConfigFrom(explicitConfig, dataOverride, executableDir, userConf
 	if fileConfig.WindowHeight != 0 {
 		result.WindowHeight = fileConfig.WindowHeight
 	}
-	if result.WindowWidth < 960 || result.WindowHeight < 640 {
-		return desktopConfig{}, errors.New("windowWidth must be at least 960 and windowHeight at least 640")
+	if result.WindowWidth < minimumWindowWidth || result.WindowHeight < minimumWindowHeight {
+		return desktopConfig{}, fmt.Errorf("windowWidth must be at least %d and windowHeight at least %d", minimumWindowWidth, minimumWindowHeight)
 	}
 
 	dataDir := dataOverride
@@ -96,7 +98,7 @@ func loadDesktopConfigFrom(explicitConfig, dataOverride, executableDir, userConf
 		dataDir = strings.TrimSpace(fileConfig.DataDir)
 	}
 	if dataDir == "" {
-		dataDir = filepath.Join(userConfigDir, "CPA Orbit")
+		dataDir = defaultDataDir(executableDir, userConfigDir)
 	} else if !filepath.IsAbs(dataDir) {
 		base := executableDir
 		if configPath != "" {
@@ -111,6 +113,36 @@ func loadDesktopConfigFrom(explicitConfig, dataOverride, executableDir, userConf
 	result.DataDir = filepath.Clean(absoluteDataDir)
 	result.ConfigPath = configPath
 	return result, nil
+}
+
+// defaultDataDir lets an executable launched from app/build/bin share the
+// repository's data, settings, keys, and subscription archive with web
+// development. Standalone copies continue to use the per-user directory.
+func defaultDataDir(executableDir, userConfigDir string) string {
+	if root, ok := repositoryRootFromExecutable(executableDir); ok {
+		return root
+	}
+	return filepath.Join(userConfigDir, "CPA Orbit")
+}
+
+func repositoryRootFromExecutable(executableDir string) (string, bool) {
+	root := filepath.Clean(filepath.Join(executableDir, "..", "..", ".."))
+	required := []string{
+		filepath.Join(root, "server", "go.mod"),
+		filepath.Join(root, "web", "package.json"),
+		filepath.Join(root, "app", "wails.json"),
+	}
+	for _, path := range required {
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			return "", false
+		}
+	}
+	absolute, err := filepath.Abs(root)
+	if err != nil {
+		return "", false
+	}
+	return filepath.Clean(absolute), true
 }
 
 func defaultConfigPath(executableDir string) string {

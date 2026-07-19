@@ -22,6 +22,31 @@ func TestLoadDesktopConfigUsesPerUserDefault(t *testing.T) {
 	}
 }
 
+func TestLoadDesktopConfigSharesRepositoryDataForLocalBuild(t *testing.T) {
+	root := t.TempDir()
+	executableDir := filepath.Join(root, "app", "build", "bin")
+	for _, path := range []string{
+		filepath.Join(root, "server", "go.mod"),
+		filepath.Join(root, "web", "package.json"),
+		filepath.Join(root, "app", "wails.json"),
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("test"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	config, err := loadDesktopConfigFrom("", "", executableDir, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.DataDir != root {
+		t.Fatalf("data dir = %q, want repository root %q", config.DataDir, root)
+	}
+}
+
 func TestDefaultConfigPathSupportsMacAppBundle(t *testing.T) {
 	bundleParent := t.TempDir()
 	executableDir := filepath.Join(bundleParent, "CPAOrbit.app", "Contents", "MacOS")

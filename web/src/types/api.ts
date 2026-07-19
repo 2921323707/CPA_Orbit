@@ -207,6 +207,11 @@ export interface Settings {
   cpa_auth_dir?: string
   syncToCpaAuthDir?: boolean
   sync_to_cpa_auth_dir?: boolean
+  themeMode?: 'light' | 'dark' | 'auto'
+  startOnLogin?: boolean
+  closeToTray?: boolean
+  desktopNotifications?: boolean
+  flashOnAlert?: boolean
   [key: string]: unknown
 }
 

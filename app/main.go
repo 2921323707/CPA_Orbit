@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"log"
+	"os"
+	"path/filepath"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -19,9 +22,31 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	app, err := newApp(config.DataDir)
+	executable, err := os.Executable()
 	if err != nil {
 		log.Fatal(err)
+	}
+	companion, err := discoverCompanion(filepath.Dir(executable), config.DataDir)
+	if err != nil {
+		log.Printf("CLIProxyAPI auto-start is unavailable: %v", err)
+	}
+	app, err := newApp(config.DataDir, companion)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := app.prepareAPI(defaultMonitorAddress); err != nil {
+		log.Fatal(err)
+	}
+	defer app.shutdown(context.Background())
+	if companion != nil {
+		started, startErr := companion.Start()
+		if startErr != nil {
+			log.Printf("CLIProxyAPI auto-start failed: %v", startErr)
+		} else if started {
+			log.Printf("CLIProxyAPI started automatically from %s", companion.executable)
+		} else {
+			log.Printf("CLIProxyAPI is already listening on %s", companionAddress)
+		}
 	}
 	log.Printf("CPA Orbit desktop data directory: %s", config.DataDir)
 	if config.ConfigPath != "" {
@@ -32,15 +57,17 @@ func main() {
 		Title:                    "CPA Orbit",
 		Width:                    config.WindowWidth,
 		Height:                   config.WindowHeight,
-		MinWidth:                 960,
-		MinHeight:                640,
+		MinWidth:                 minimumWindowWidth,
+		MinHeight:                minimumWindowHeight,
+		DisableResize:            true,
 		BackgroundColour:         options.NewRGB(16, 36, 43),
 		AssetServer:              &assetserver.Options{Assets: assets, Handler: app.handler()},
 		OnStartup:                app.startup,
+		OnBeforeClose:            app.beforeClose,
 		OnShutdown:               app.shutdown,
 		EnableDefaultContextMenu: false,
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("CPA Orbit stopped with an error: %v", err)
 	}
 }

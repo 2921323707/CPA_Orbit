@@ -21,14 +21,22 @@ const maxUploadBytes = 2 << 20
 const appVersion = "1.0.2"
 
 type Server struct {
-	settings *config.Store
-	monitor  *Monitor
-	subs     *subscriptions.Manager
+	settings       *config.Store
+	monitor        *Monitor
+	subs           *subscriptions.Manager
+	settingsUpdate func(config.Settings)
 }
 
-func NewServer(settings *config.Store, monitor *Monitor, subs *subscriptions.Manager) http.Handler {
-	s := &Server{settings: settings, monitor: monitor, subs: subs}
+func NewServer(settings *config.Store, monitor *Monitor, subs *subscriptions.Manager) *Server {
+	return &Server{settings: settings, monitor: monitor, subs: subs}
+}
+
+func (s *Server) Handler() http.Handler {
 	return s.middleware(http.HandlerFunc(s.route))
+}
+
+func (s *Server) SetSettingsUpdateHandler(handler func(config.Settings)) {
+	s.settingsUpdate = handler
 }
 
 func (s *Server) route(w http.ResponseWriter, r *http.Request) {
@@ -356,14 +364,19 @@ func (s *Server) handleLubanKey(w http.ResponseWriter, r *http.Request) {
 }
 
 type settingsUpdate struct {
-	Threshold          *float64 `json:"threshold"`
-	RefreshMinutes     *int     `json:"refreshMinutes"`
-	WebhookURL         *string  `json:"webhookUrl"`
-	BaseURL            *string  `json:"baseUrl"`
-	APIKey             *string  `json:"apiKey"`
-	AllowRemoteBaseURL *bool    `json:"allowRemoteBaseUrl"`
-	CPAAuthDir         *string  `json:"cpaAuthDir"`
-	SyncToCPAAuthDir   *bool    `json:"syncToCpaAuthDir"`
+	Threshold            *float64 `json:"threshold"`
+	RefreshMinutes       *int     `json:"refreshMinutes"`
+	WebhookURL           *string  `json:"webhookUrl"`
+	BaseURL              *string  `json:"baseUrl"`
+	APIKey               *string  `json:"apiKey"`
+	AllowRemoteBaseURL   *bool    `json:"allowRemoteBaseUrl"`
+	CPAAuthDir           *string  `json:"cpaAuthDir"`
+	SyncToCPAAuthDir     *bool    `json:"syncToCpaAuthDir"`
+	ThemeMode            *string  `json:"themeMode"`
+	StartOnLogin         *bool    `json:"startOnLogin"`
+	CloseToTray          *bool    `json:"closeToTray"`
+	DesktopNotifications *bool    `json:"desktopNotifications"`
+	FlashOnAlert         *bool    `json:"flashOnAlert"`
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
@@ -401,9 +414,27 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if input.SyncToCPAAuthDir != nil {
 			current.SyncToCPAAuthDir = *input.SyncToCPAAuthDir
 		}
+		if input.ThemeMode != nil {
+			current.ThemeMode = *input.ThemeMode
+		}
+		if input.StartOnLogin != nil {
+			current.StartOnLogin = *input.StartOnLogin
+		}
+		if input.CloseToTray != nil {
+			current.CloseToTray = *input.CloseToTray
+		}
+		if input.DesktopNotifications != nil {
+			current.DesktopNotifications = *input.DesktopNotifications
+		}
+		if input.FlashOnAlert != nil {
+			current.FlashOnAlert = *input.FlashOnAlert
+		}
 		if err := s.settings.Update(current); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_settings", err.Error())
 			return
+		}
+		if s.settingsUpdate != nil {
+			s.settingsUpdate(current)
 		}
 		s.monitor.ResetSchedule()
 		writeJSON(w, http.StatusOK, s.settings.Public())

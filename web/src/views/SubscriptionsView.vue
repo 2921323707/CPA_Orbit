@@ -109,12 +109,11 @@ async function load() {
 
 async function importFiles() {
   if (!files.value.length) return toast.error('请先选择 JSON 文件')
-  if (files.value.length === 1 && !acquisitionPrice.value.trim()) {
-    const proceed = window.confirm('未填写“入手价格”。该项为非必填，仍要继续导入吗？')
-    if (!proceed) return
-  }
   importing.value = true
   const queued = [...files.value]
+  if (queued.length === 1 && !acquisitionPrice.value.trim()) {
+    toast.show('未填写入手价格，将按可选字段为空继续导入', 'info')
+  }
   let imported = 0
   let failed = 0
   const failureDetails: string[] = []

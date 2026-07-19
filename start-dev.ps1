@@ -10,8 +10,17 @@ $go = if (Get-Command go -ErrorAction SilentlyContinue) { 'go' } elseif (Test-Pa
 Write-Host 'Starting mature CLIProxyAPI 7.2.71...' -ForegroundColor Magenta
 & $cpaStart
 
-Write-Host 'Starting CPA Monitor API at http://127.0.0.1:8080' -ForegroundColor Cyan
-Start-Process pwsh -ArgumentList '-NoExit', '-Command', "Set-Location '$server'; & '$go' run ./cmd/server -project-root '$root'"
+$monitorOnline = $false
+try {
+    $health = Invoke-RestMethod -Uri 'http://127.0.0.1:8080/api/health' -TimeoutSec 1
+    $monitorOnline = $health.status -eq 'ok' -and $health.name -eq 'CPA Orbit'
+} catch {}
+if ($monitorOnline) {
+    Write-Host 'Reusing CPA Monitor API at http://127.0.0.1:8080' -ForegroundColor Cyan
+} else {
+    Write-Host 'Starting CPA Monitor API at http://127.0.0.1:8080' -ForegroundColor Cyan
+    Start-Process pwsh -ArgumentList '-NoExit', '-Command', "Set-Location '$server'; & '$go' run ./cmd/server -project-root '$root'"
+}
 
 Write-Host 'Starting CPA Monitor UI at http://127.0.0.1:5173' -ForegroundColor Green
 Write-Host 'CLIProxyAPI is available at http://127.0.0.1:8317/v1' -ForegroundColor Magenta

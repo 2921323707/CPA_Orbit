@@ -37,7 +37,14 @@ type Monitor struct {
 	priceHistory   []model.PriceSample
 	gptPlusHistory []model.PriceSample
 	alerts         []model.Alert
+	alertHandler   func(model.Alert)
 	reset          chan struct{}
+}
+
+func (m *Monitor) SetAlertHandler(handler func(model.Alert)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.alertHandler = handler
 }
 
 func NewMonitor(offersPath, alertsPath string, settings *config.Store, scraperClient *scraper.Client) (*Monitor, error) {
@@ -242,8 +249,12 @@ func (m *Monitor) maybeAlert(ctx context.Context, offer model.Offer) {
 	m.alerts = append(m.alerts, alert)
 	index := len(m.alerts) - 1
 	alertsCopy := append([]model.Alert(nil), m.alerts...)
+	handler := m.alertHandler
 	m.mu.Unlock()
 	_ = storage.SaveJSON(m.alertsPath, alertsCopy)
+	if handler != nil {
+		handler(alert)
+	}
 
 	if settings.WebhookURL == "" {
 		return

@@ -47,7 +47,7 @@ fi
 
 cp "$APP_DIR/cpa-orbit.config.example.json" "$output_dir/"
 cp "$REPO_ROOT/LICENSE" "$output_dir/LICENSE.txt"
-cp "$REPO_ROOT/THIRD_PARTY_NOTICES.md" "$output_dir/"
+cp "$REPO_ROOT/docs/THIRD_PARTY_NOTICES.md" "$output_dir/"
 archive="$output_dir/CPAOrbit-macos-$arch.zip"
 rm -f "$archive"
 ditto -c -k --sequesterRsrc --keepParent "$app_path" "$archive"

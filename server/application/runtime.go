@@ -12,6 +12,7 @@ import (
 
 	"cpa-monitor/server/internal/config"
 	"cpa-monitor/server/internal/httpapi"
+	"cpa-monitor/server/internal/model"
 	"cpa-monitor/server/internal/scraper"
 	"cpa-monitor/server/internal/subscriptions"
 )
@@ -21,9 +22,16 @@ import (
 type Runtime struct {
 	root      string
 	handler   http.Handler
+	server    *httpapi.Server
 	monitor   *httpapi.Monitor
+	settings  *config.Store
 	startOnce sync.Once
 }
+
+// Settings and Alert are public aliases so the desktop host can consume the
+// shared runtime without reaching into the server's internal packages.
+type Settings = config.Settings
+type Alert = model.Alert
 
 // New creates a backend rooted at root. Mutable data is stored below root/data
 // and subscription archives below root/k12.
@@ -65,11 +73,29 @@ func New(root string) (*Runtime, error) {
 		return nil, err
 	}
 
+	server := httpapi.NewServer(settings, monitor, subs)
 	return &Runtime{
-		root:    absoluteRoot,
-		handler: httpapi.NewServer(settings, monitor, subs),
-		monitor: monitor,
+		root: absoluteRoot, handler: server.Handler(), server: server,
+		monitor: monitor, settings: settings,
 	}, nil
+}
+
+func (r *Runtime) SetSettingsUpdateHandler(handler func(config.Settings)) {
+	r.server.SetSettingsUpdateHandler(handler)
+}
+
+func (r *Runtime) Settings() config.Settings {
+	return r.settings.Get()
+}
+
+// ReloadSettings picks up changes made by another frontend sharing the same
+// data directory (for example the browser while the desktop app is running).
+func (r *Runtime) ReloadSettings() error {
+	return r.settings.Reload()
+}
+
+func (r *Runtime) SetAlertHandler(handler func(model.Alert)) {
+	r.monitor.SetAlertHandler(handler)
 }
 
 // Handler returns the HTTP API with its normal network-facing CORS policy.

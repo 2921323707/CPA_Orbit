@@ -1,84 +1,176 @@
-# CPA Orbit
+<div align="center">
+  <img src="app/build/appicon.png" width="132" alt="CPA Orbit logo" />
+  <h1>CPA Orbit</h1>
+  <p><strong>A local-first operations console for AI subscriptions, price intelligence, quota health, and CPA proxy runtime.</strong></p>
 
-> v1.0.2 · A quiet, local-first workspace from K12 price radar to CPA proxy operations.
+  [![CI](https://github.com/2921323707/CPA_Orbit/actions/workflows/ci.yml/badge.svg)](https://github.com/2921323707/CPA_Orbit/actions/workflows/ci.yml)
+  [![Release](https://img.shields.io/github/v/release/2921323707/CPA_Orbit?display_name=tag&sort=semver)](https://github.com/2921323707/CPA_Orbit/releases)
+  [![License](https://img.shields.io/github/license/2921323707/CPA_Orbit)](LICENSE)
+  [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+  [![Vue](https://img.shields.io/badge/Vue-3.5-42B883?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
+  [![Wails](https://img.shields.io/badge/Wails-2.13-DF0000?logo=wails&logoColor=white)](https://wails.io/)
 
-[中文](#中文) · [English](#english) · [更新日志](CHANGELOG.md) · [安全策略](SECURITY.md) · [贡献指南](CONTRIBUTING.md) · [GitHub](https://github.com/2921323707/CPA_Orbit)
+  [Overview](#overview) · [Showcase](#showcase) · [Architecture](#architecture) · [Quick start](#quick-start) · [Documentation](#documentation) · [Contributing](docs/CONTRIBUTING.md)
+</div>
 
-## 中文
+## Overview
 
-CPA Orbit 不想做成一个庞大的后台。它只把几件经常要来回切换的事放在一起：看 K12 价格、归档订阅、检查额度、维护 CPA 代理，再顺手处理 GPT Plus 和接码流程。数据留在本机，目录清楚，出了问题也能沿着记录回溯。
+CPA Orbit brings the operational paths that normally live across scripts, browser tabs, and local folders into one coherent workspace. The desktop application and browser console share the same Go runtime, settings, credentials, subscription archive, alerts, and price history. Everything stays local by default and the network services bind to loopback interfaces.
 
-### 核心功能
+- **Subscription operations** — single or batch JSON import, canonical-content deduplication, archive management, CPA synchronization, quota checks, and connectivity diagnostics.
+- **Price intelligence** — K12 and GPT Plus offer collection, current inventory, threshold alerts, and truthful 14-day average-price history.
+- **CPA runtime control** — automatic CLIProxyAPI discovery and startup, live health state, auth-pool projection, and shared endpoint visibility.
+- **Desktop integration** — compact Wails host, system tray, close-to-tray behavior, native notifications, taskbar alerts, and startup-at-login.
+- **SMS workflow** — backend-protected Luban key, country/service discovery, balance, number acquisition, three-second verification polling, and release.
+- **Focused interface** — responsive web layout, fixed 1280×800 desktop composition, Auto/Light/Dark themes, accessible states, and restrained loading motion.
 
-- 订阅归档是唯一事实源，`cpa/auths` 是可重建的运行投影。
-- 单个或批量导入 CPA/Codex/Claude/Kimi/DeepSeek 等 Provider JSON；完整 JSON 内容一致时才视为重复。
-- 单文件可记录入手价格；订阅列表每页 10 条并自动刷新当前页额度。
-- 定时抓取 K12 与 GPT Plus 真实报价，保存最近 14 天平均价格历史并支持双线对照。
-- 鲁班接码支持余额、国家、服务单价、获取号码、3 秒验证码轮询和释放号码；API key 不返回浏览器。
-- 深色模式、双语全局壳层、艺术加载动画、响应式布局和无障碍状态提示。
+## Showcase
 
-### 启动
+### Operations overview
 
-Windows PowerShell：
+![CPA Orbit operations overview](docs/assets/showcase/overview.png)
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/assets/showcase/subscriptions.png" alt="Subscription import and quota operations" /></td>
+    <td width="50%"><img src="docs/assets/showcase/sms-verification.png" alt="GPT Plus SMS verification workflow" /></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Subscription lifecycle</strong></td>
+    <td align="center"><strong>SMS verification</strong></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/assets/showcase/documentation.png" alt="In-app documentation and operating guide" /></td>
+  </tr>
+</table>
+
+> Showcase data is synthetic. Credential-bearing JSON, tokens, account lists, and private runtime screenshots are never committed.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph UX["Experience Layer"]
+    WEB["Browser Console<br/>Vue 3 + Vite"]
+    APP["Desktop Console<br/>Wails + WebView2"]
+  end
+
+  subgraph CORE["Local Control Plane · 127.0.0.1:8080"]
+    API["Monitor API<br/>Go · net/http"]
+    MON["Price & Alert Monitor"]
+    SUB["Subscription Manager"]
+    SMS["Luban SMS Proxy"]
+  end
+
+  subgraph STATE["Local Source of Truth"]
+    DATA[("data/<br/>settings · history · alerts")]
+    ARCH[("k12/<br/>subscription archive")]
+  end
+
+  subgraph RUNTIME["Rebuildable Runtime Projection"]
+    CPA["CLIProxyAPI<br/>127.0.0.1:8317"]
+    AUTH[("cpa/auths/")]
+  end
+
+  WEB -->|"HTTP /api"| API
+  APP -->|"same-origin /api"| API
+  API --> MON & SUB & SMS
+  MON <--> DATA
+  SUB <--> ARCH
+  SUB -->|"reconcile"| AUTH
+  AUTH --> CPA
+  API -->|"health & quota"| CPA
+
+  classDef client fill:#10262d,stroke:#36c2b4,color:#f4fffd,stroke-width:2px;
+  classDef service fill:#e8f8f5,stroke:#138a7e,color:#12352f,stroke-width:2px;
+  classDef store fill:#fff8e8,stroke:#d59b2d,color:#4c3510,stroke-width:2px;
+  classDef runtime fill:#eef2ff,stroke:#5c6ac4,color:#222a57,stroke-width:2px;
+  class WEB,APP client;
+  class API,MON,SUB,SMS service;
+  class DATA,ARCH store;
+  class CPA,AUTH runtime;
+```
+
+The archive under `k12/` is the subscription source of truth. `cpa/auths/` is a rebuildable runtime projection, so the web and desktop clients never maintain competing account stores. See the [architecture dossier](docs/architecture/README.md) for trust boundaries, import sequence, failure modes, and ADRs.
+
+## Recent updates
+
+- Unified desktop and browser data, settings, secrets, subscription state, and backend health reporting.
+- Added one-click desktop startup for the Monitor API and CLIProxyAPI, plus tray, notifications, taskbar flashing, and startup-at-login controls.
+- Added Auto/Light/Dark appearance modes and a stable fixed-size desktop window without resize polling.
+- Decoupled Monitor and CLIProxyAPI health checks to prevent false offline status.
+- Rebuilt Settings navigation as stable in-page controls and removed route/hash interference.
+- Removed the blocking WebView confirmation from optional-price imports; imports now start immediately with visible progress and result feedback.
+- Improved route loading, skeleton states, endpoint visibility, shared status feedback, and responsive layouts.
+- Added Playwright regression coverage, GitHub CI, structured issue/PR templates, an English-only README, and a categorized documentation system.
+
+See the complete [changelog](docs/releases/CHANGELOG.md).
+
+## Quick start
+
+### Prerequisites
+
+- Go 1.25 or newer
+- Node.js 20 or newer with npm
+- Windows 10/11 with WebView2 for the desktop executable
+- A local CLIProxyAPI runtime only when CPA proxy features are required
+
+### Development workspace
 
 ```powershell
+git clone https://github.com/2921323707/CPA_Orbit.git
+cd CPA_Orbit
 .\start-dev.ps1
 ```
 
-服务地址：
+| Service | Local endpoint |
+|---|---|
+| Web console | `http://127.0.0.1:5173/` |
+| Monitor API | `http://127.0.0.1:8080/api` |
+| CLIProxyAPI | `http://127.0.0.1:8317/v1` |
+| In-app guide | `http://127.0.0.1:5173/docs` |
 
-- CLIProxyAPI：`http://127.0.0.1:8317/v1`
-- Monitor API：`http://127.0.0.1:8080/api`
-- Web Console：`http://127.0.0.1:5173/`
-- 文档：`http://127.0.0.1:5173/docs`
-
-### 桌面应用
-
-`app/` 提供基于 Wails 的轻量桌面包，不携带 Chromium 或 Node.js 运行时。Windows 双击 `app/build-windows.cmd` 即可生成 `app/build/bin/CPAOrbit.exe`；macOS 在 Mac 上执行 `./app/build-macos.sh` 可生成 `.app` 和分发 ZIP。桌面版默认使用系统用户配置目录，也支持通过可编辑 JSON 配置使用相对路径，实现 Windows 与 macOS 间迁移。详见 [app/README.md](app/README.md)。
-
-### 安全边界
-
-默认仅监听回环地址。CPA JSON、OAuth token、本地 API key、鲁班 API key、`data/`、`k12/` 和 `cpa/auths/` 都不应提交到仓库。详细规则见 [SECURITY.md](SECURITY.md)。
-
-### 数据来源与致谢
-
-- 报价与商品信息来自 [PriceAI](https://priceai.cc/)。感谢其公开的商品数据与价格查询入口，让 K12 / GPT Plus 的历史走势有了可靠来源。
-- 支付跳转与订单查询来自 [链动小铺 LXDP](https://pay.ldxp.cn/)。感谢其提供的商品支付与订单查询链路。
-
-CPA Orbit 只是聚合、记录和跳转工具，不代表上述平台或商家；价格、库存、支付和售后以来源平台页面为准。
-
-## English
-
-CPA Orbit is a quiet, local-first workspace for the parts of AI subscription operations that usually get scattered across tabs: K12 price discovery, subscription archives, quota checks, CPA proxy runtime, GPT Plus, and SMS verification.
-
-### Highlights
-
-- Archived subscriptions are the source of truth; `cpa/auths` is a rebuildable runtime projection.
-- Single or batch JSON import for CPA/Codex/Claude/Kimi/DeepSeek providers; only identical normalized JSON is considered a duplicate.
-- Optional acquisition price for single-file imports, ten-row pagination, and automatic quota refresh for the current page.
-- Real K12 and GPT Plus price collection with 14-day history and dual-series comparison.
-- Backend-only Luban credentials with balance, catalog pricing, number acquisition, three-second code polling, and release.
-- Dark mode, bilingual application shell, restrained orbital loading motion, responsive layouts, and accessible status indicators.
-
-### Data sources and thanks
-
-- Offer and price data: [PriceAI](https://priceai.cc/). Thank you for the public product data and price-query surface used by the K12 / GPT Plus history views.
-- Payment redirects and order lookup: [LXDP](https://pay.ldxp.cn/). Thank you for providing the checkout and order-query path used by the console.
-
-CPA Orbit aggregates, records, and redirects only. It is not affiliated with either service; live price, stock, payment, and after-sales terms remain subject to the source platform.
-
-### Development
+### Windows desktop build
 
 ```powershell
-.\start-dev.ps1
+.\app\build-windows.ps1
 ```
 
-### Desktop application
+The portable executable is written to `app/build/bin/CPAOrbit.exe`. A repository build automatically shares the root `data/` and `k12/` directories with the browser console and starts or reuses all required local services.
 
-The lightweight Wails host lives in `app/`. Double-click `app/build-windows.cmd` to create the Windows EXE, or run `./app/build-macos.sh` on macOS to create an `.app` and distributable ZIP. See [app/README.md](app/README.md) for portable configuration, migration, signing, and build requirements.
+## Verification
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a change. This repository includes third-party software; review [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) before redistribution.
+```powershell
+# Backend and desktop host
+.\.tools\go\bin\go.exe test ./...
+
+# Frontend production build and browser regression suite
+cd web
+npm ci
+npm run build
+npx playwright install chromium
+npm run test:e2e
+```
+
+## Documentation
+
+| Area | Guide |
+|---|---|
+| Architecture and ADRs | [docs/architecture](docs/architecture/README.md) |
+| Desktop development and distribution | [docs/development/desktop.md](docs/development/desktop.md) |
+| Backend API and security boundaries | [docs/development/backend.md](docs/development/backend.md) |
+| Releases and changelog | [docs/releases](docs/releases/CHANGELOG.md) |
+| Contribution and community policies | [docs/community](docs/community/README.md) |
+| Complete documentation index | [docs/README.md](docs/README.md) |
+
+## Security
+
+CPA Orbit is local-first, not credential-free. Never commit or share CPA JSON, OAuth tokens, API keys, `data/`, `k12/`, `cpa/auths/`, logs, or screenshots containing account information. Review the [security policy](docs/SECURITY.md) before exposing an endpoint or redistributing a build.
+
+## Data sources and acknowledgements
+
+Offer and price data comes from [PriceAI](https://priceai.cc/). Checkout redirects and order lookup use [LXDP](https://pay.ldxp.cn/). CPA Orbit aggregates, records, and redirects only; source platforms remain authoritative for live prices, inventory, payment, and after-sales terms.
 
 ## License
 
-Original CPA Orbit source code is available under the [MIT License](LICENSE). Bundled or referenced third-party components retain their own licenses.
+Original CPA Orbit source code is available under the [MIT License](LICENSE). Bundled or referenced third-party components retain their own licenses; see the [third-party notices](docs/THIRD_PARTY_NOTICES.md).

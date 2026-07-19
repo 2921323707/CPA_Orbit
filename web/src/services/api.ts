@@ -98,9 +98,19 @@ export const api = {
   },
   importSubscriptions(options: ImportSubscriptionsOptions) {
     const body = new FormData()
-    body.append('file', options.file)
-    if (options.acquisitionPrice) body.append('acquisitionPrice', options.acquisitionPrice)
-    return request<ApiMessage>('/subscriptions/import', { method: 'POST', body })
+    // WebView2 can expose the selected File metadata correctly while sending
+    // an empty multipart part when the original File object is appended
+    // directly. Read the file first and rebuild a Blob so desktop and browser
+    // clients send the same bytes to the Go API.
+    return options.file.text().then((text) => {
+      const normalized = text.replace(/^\uFEFF/, '')
+      if (!normalized.trim()) {
+        throw new ApiError('选择的 JSON 文件为空或无法读取', 400)
+      }
+      body.append('file', new Blob([normalized], { type: 'application/json' }), options.file.name)
+      if (options.acquisitionPrice) body.append('acquisitionPrice', options.acquisitionPrice)
+      return request<ApiMessage>('/subscriptions/import', { method: 'POST', body })
+    })
   },
   testSubscription: (id: string | number) => request<SubscriptionConnectivity>(`/subscriptions/${encodeURIComponent(id)}/test`, { method: 'POST' }),
   syncSubscription: (id: string | number) => request<ApiMessage>(`/subscriptions/${encodeURIComponent(id)}/sync`, { method: 'POST' }),

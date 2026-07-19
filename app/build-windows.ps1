@@ -46,7 +46,7 @@ try {
     $OutputDir = Join-Path $PSScriptRoot 'build\bin'
     Copy-Item (Join-Path $PSScriptRoot 'cpa-orbit.config.example.json') (Join-Path $OutputDir 'cpa-orbit.config.example.json') -Force
     Copy-Item (Join-Path $RepoRoot 'LICENSE') (Join-Path $OutputDir 'LICENSE.txt') -Force
-    Copy-Item (Join-Path $RepoRoot 'THIRD_PARTY_NOTICES.md') (Join-Path $OutputDir 'THIRD_PARTY_NOTICES.md') -Force
+    Copy-Item (Join-Path $RepoRoot 'docs\THIRD_PARTY_NOTICES.md') (Join-Path $OutputDir 'THIRD_PARTY_NOTICES.md') -Force
 
     $Checksums = Get-ChildItem $OutputDir -File | Where-Object { $_.Extension -eq '.exe' } | ForEach-Object {
         $Hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
