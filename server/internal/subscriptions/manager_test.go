@@ -184,9 +184,13 @@ func TestSubscriptionCategory(t *testing.T) {
 
 func TestPageReturnsTenItemsAndFolders(t *testing.T) {
 	m := &Manager{items: make(map[string]model.Subscription)}
+	totalCost := 0.0
 	for i := 0; i < 25; i++ {
 		id := fmt.Sprintf("id-%02d", i)
-		m.items[id] = model.Subscription{ID: id, Email: fmt.Sprintf("user%02d@example.com", i), Folder: fmt.Sprintf("071%d", i%3), RelativePath: fmt.Sprintf("071%d/%02d.json", i%3, i), Connectivity: model.Connectivity{Status: "ok"}}
+		price := float64(i + 1)
+		days := i
+		totalCost += price
+		m.items[id] = model.Subscription{ID: id, Email: fmt.Sprintf("user%02d@example.com", i), Folder: fmt.Sprintf("071%d", i%3), RelativePath: fmt.Sprintf("071%d/%02d.json", i%3, i), AcquisitionPrice: &price, RemainingDays: &days, Connectivity: model.Connectivity{Status: "ok"}}
 	}
 	result := m.Page("", "normal", "", 2, 10)
 	if result.Total != 25 || len(result.Subscriptions) != 10 || result.Page != 2 || result.TotalPages != 3 {
@@ -194,6 +198,12 @@ func TestPageReturnsTenItemsAndFolders(t *testing.T) {
 	}
 	if len(result.Folders) != 3 {
 		t.Fatalf("unexpected folders: %v", result.Folders)
+	}
+	if result.Insights.Normal != 25 || result.Insights.Error != 0 || result.Insights.Priced != 25 || result.Insights.ExpiringSoon != 8 {
+		t.Fatalf("unexpected insights: %+v", result.Insights)
+	}
+	if result.Insights.TotalCost != totalCost || result.Insights.AverageCost != totalCost/25 {
+		t.Fatalf("unexpected cost insights: %+v", result.Insights)
 	}
 }
 

@@ -100,7 +100,8 @@ The archive under `k12/` is the subscription source of truth. `cpa/auths/` is a 
 - Added Auto/Light/Dark appearance modes and a stable fixed-size desktop window without resize polling.
 - Decoupled Monitor and CLIProxyAPI health checks to prevent false offline status.
 - Rebuilt Settings navigation as stable in-page controls and removed route/hash interference.
-- Removed the blocking WebView confirmation from optional-price imports; imports now start immediately with visible progress and result feedback.
+- Fixed optional-price imports across the Vue numeric model and WebView2 upload boundary; imports now start immediately with bounded requests and guaranteed action recovery.
+- Added subscription asset insights for account health, recorded cost, average acquisition price, and seven-day expiry risk.
 - Improved route loading, skeleton states, endpoint visibility, shared status feedback, and responsive layouts.
 - Added Playwright regression coverage, GitHub CI, structured issue/PR templates, an English-only README, and a categorized documentation system.
 

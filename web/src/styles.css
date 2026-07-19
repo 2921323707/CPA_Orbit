@@ -426,6 +426,18 @@ tbody tr:hover { background: #fafcfc; }
 .file-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-chip button { display: grid; padding: 1px; place-items: center; border: 0; color: var(--text-muted); background: none; cursor: pointer; }
 .form-actions { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
+.subscription-insights { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; padding: 0 20px 16px; }
+.subscription-insight { min-width: 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 14px; background: color-mix(in srgb, var(--surface) 82%, var(--accent) 2%); }
+.subscription-insight span, .subscription-insight small { display: block; color: var(--text-muted); }
+.subscription-insight span { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.subscription-insight strong { display: block; margin: 5px 0 2px; overflow: hidden; color: var(--text); font-size: clamp(18px, 2vw, 25px); line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
+.subscription-insight small { font-size: 10px; }
+.subscription-insight--success { border-color: color-mix(in srgb, var(--success) 34%, var(--border)); }
+.subscription-insight--success strong { color: var(--success); }
+.subscription-insight--accent { border-color: color-mix(in srgb, var(--accent) 38%, var(--border)); }
+.subscription-insight--accent strong { color: var(--accent); }
+.subscription-insight--warning { border-color: color-mix(in srgb, var(--warning) 42%, var(--border)); }
+.subscription-insight--warning strong { color: var(--warning); }
 .filters { display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-bottom: 1px solid var(--border); background: #fbfcfd; }
 .search-field { display: flex; min-width: 260px; flex: 1; align-items: center; gap: 8px; padding: 0 11px; color: var(--text-muted); border: 1px solid var(--border-strong); border-radius: 8px; background: white; }
 .search-field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(15,118,110,.1); }
@@ -622,6 +634,7 @@ tbody tr:hover { background: #fafcfc; }
   .content { padding: 18px 16px 38px; }
   .import-layout { grid-template-columns: 1fr; }
   .import-tools { grid-template-columns: 1fr; }
+  .subscription-insights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .form-grid { grid-template-columns: 1fr; }
   .settings-layout { grid-template-columns: 1fr; }
   .settings-rail { position: static; }

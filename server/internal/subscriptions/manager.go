@@ -74,6 +74,16 @@ type PageResult struct {
 	PageSize      int                  `json:"pageSize"`
 	TotalPages    int                  `json:"totalPages"`
 	Folders       []string             `json:"folders"`
+	Insights      SubscriptionInsights `json:"insights"`
+}
+
+type SubscriptionInsights struct {
+	Normal       int     `json:"normal"`
+	Error        int     `json:"error"`
+	Priced       int     `json:"priced"`
+	TotalCost    float64 `json:"totalCost"`
+	AverageCost  float64 `json:"averageCost"`
+	ExpiringSoon int     `json:"expiringSoon"`
 }
 
 type ImportOptions struct {
@@ -262,7 +272,33 @@ func (m *Manager) Page(folder, category, search string, page, pageSize int) Page
 		end = total
 	}
 	folders := m.folders()
-	return PageResult{Subscriptions: items[start:end], Total: total, Page: page, PageSize: pageSize, TotalPages: totalPages, Folders: folders}
+	return PageResult{
+		Subscriptions: items[start:end],
+		Total:         total, Page: page, PageSize: pageSize, TotalPages: totalPages,
+		Folders: folders, Insights: subscriptionInsights(items),
+	}
+}
+
+func subscriptionInsights(items []model.Subscription) SubscriptionInsights {
+	var result SubscriptionInsights
+	for _, item := range items {
+		if subscriptionCategory(item) == "normal" {
+			result.Normal++
+		} else {
+			result.Error++
+		}
+		if item.AcquisitionPrice != nil {
+			result.Priced++
+			result.TotalCost += *item.AcquisitionPrice
+		}
+		if item.RemainingDays != nil && *item.RemainingDays >= 0 && *item.RemainingDays <= 7 {
+			result.ExpiringSoon++
+		}
+	}
+	if result.Priced > 0 {
+		result.AverageCost = result.TotalCost / float64(result.Priced)
+	}
+	return result
 }
 
 func (m *Manager) filteredSubscriptions(folder, category, search string) []model.Subscription {

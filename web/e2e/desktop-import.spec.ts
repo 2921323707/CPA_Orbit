@@ -23,7 +23,12 @@ async function mockOrbitApi(page: Page) {
       return route.fulfill({ status: 200, json: { message: 'Imported' } })
     }
     if (path.endsWith('/api/subscriptions') && request.method() === 'GET') {
-      return route.fulfill({ json: { subscriptions: [], total: 0, page: 1, pageSize: 10, totalPages: 0, folders: [] } })
+      return route.fulfill({
+        json: {
+          subscriptions: [], total: 0, page: 1, pageSize: 10, totalPages: 0, folders: [],
+          insights: { normal: 1, error: 0, priced: 1, totalCost: 12.34, averageCost: 12.34, expiringSoon: 0 },
+        },
+      })
     }
 
     return route.fulfill({ status: 404, json: { message: `Unhandled test route: ${path}` } })
@@ -72,6 +77,7 @@ test('single-file import with a price completes without mixed multipart fields',
   await expect.poll(imports.count).toBe(1)
   await expect(page.getByText('导入完成：成功 1 · 失败 0')).toBeVisible()
   await expect(page.getByRole('button', { name: '导入中…' })).toHaveCount(0)
+  await expect(page.getByText('¥12.34')).toHaveCount(2)
   expect(imports.prices()).toEqual(['12.34'])
 })
 

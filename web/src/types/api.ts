@@ -222,6 +222,16 @@ export interface SubscriptionPage {
   pageSize: number
   totalPages: number
   folders: string[]
+  insights?: SubscriptionInsights
+}
+
+export interface SubscriptionInsights {
+  normal: number
+  error: number
+  priced: number
+  totalCost: number
+  averageCost: number
+  expiringSoon: number
 }
 
 export interface SubscriptionQuery {
