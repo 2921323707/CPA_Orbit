@@ -18,6 +18,7 @@ import {
 } from 'lucide-vue-next'
 import { ref } from 'vue'
 import ReleaseChannelCard from '../components/docs/ReleaseChannelCard.vue'
+import { scrollToSection } from '../utils/scrollToSection'
 
 const changelogLanguage = ref<'zh' | 'en'>('zh')
 
@@ -38,7 +39,7 @@ const sections = [
     <div class="docs-rail">
       <aside class="docs-toc panel" aria-label="说明文档目录">
         <div class="docs-toc__title"><BookOpenText :size="18" />使用说明</div>
-        <a v-for="section in sections" :key="section.id" :href="`#${section.id}`">{{ section.label }}<ChevronRight :size="14" /></a>
+        <a v-for="section in sections" :key="section.id" :href="`#${section.id}`" @click.prevent="scrollToSection(section.id)">{{ section.label }}<ChevronRight :size="14" /></a>
       </aside>
       <ReleaseChannelCard />
     </div>

@@ -3,6 +3,7 @@ import { ChevronRight, Github, Radio } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { getGitHubRepository, PROJECT_GITHUB_URL, PROJECT_VERSION } from '../../constants/project'
 import { useLocale } from '../../i18n'
+import { scrollToSection } from '../../utils/scrollToSection'
 
 type GitHubRelease = {
   html_url: string
@@ -56,7 +57,7 @@ onMounted(async () => {
       <strong>{{ versionLabel }}</strong>
       <span>{{ releaseDate }}</span>
     </div>
-    <a class="docs-release-channel__link" href="#changelog">
+    <a class="docs-release-channel__link" href="#changelog" @click.prevent="scrollToSection('changelog')">
       {{ t('docs.release') }}<ChevronRight :size="14" />
     </a>
     <a

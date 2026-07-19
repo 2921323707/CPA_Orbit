@@ -8,7 +8,8 @@
     "build": "vue-tsc -b && vite build",
     "build:desktop": "vue-tsc -b && vite build --mode desktop",
     "preview": "vite preview --host 127.0.0.1",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:desktop": "playwright test --config playwright.desktop.config.ts"
   },
   "dependencies": {
     "lucide-vue-next": "^0.468.0",
