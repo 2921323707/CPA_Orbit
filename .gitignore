@@ -17,6 +17,9 @@ web/package.json.md5
 web/playwright-report/
 web/test-results/
 web/blob-report/
+docs/node_modules/
+docs/.vitepress/cache/
+docs/.vitepress/dist/
 
 # Runtime state
 data/*.json

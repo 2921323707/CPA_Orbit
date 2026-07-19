@@ -2,7 +2,7 @@
 
 ## Where to start
 
-- Read the [project documentation](README.md) and the in-app `/docs` guide.
+- Read the [online documentation](http://165.154.205.54/cpa_orbit/), the [repository documentation index](README.md), or the in-app `/docs` guide.
 - Use a [bug report](https://github.com/2921323707/CPA_Orbit/issues/new?template=bug_report.yml) for a reproducible CPA Orbit defect.
 - Use a [feature request](https://github.com/2921323707/CPA_Orbit/issues/new?template=feature_request.yml) for a focused product proposal.
 - Use the [private security process](SECURITY.md) for vulnerabilities or credential exposure.

@@ -6,6 +6,7 @@
   <p>
     <a href="https://github.com/2921323707/CPA_Orbit/actions"><img src="https://img.shields.io/badge/CI-configured-2088FF?style=flat-square&amp;logo=githubactions&amp;logoColor=white" alt="CI configured" /></a>
     <a href="https://github.com/2921323707/CPA_Orbit/releases"><img src="https://img.shields.io/badge/version-v1.1.0-2563EB?style=flat-square" alt="Version 1.1.0" /></a>
+    <a href="http://165.154.205.54/cpa_orbit/"><img src="https://img.shields.io/badge/docs-online-0B6159?style=flat-square" alt="Online documentation" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22C55E?style=flat-square" alt="MIT License" /></a>
     <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?style=flat-square&amp;logo=go&amp;logoColor=white" alt="Go 1.25 or newer" /></a>
     <a href="https://vuejs.org/"><img src="https://img.shields.io/badge/Vue-3.5-42B883?style=flat-square&amp;logo=vuedotjs&amp;logoColor=white" alt="Vue 3.5" /></a>
@@ -17,7 +18,7 @@
     <a href="#showcase">Showcase</a> ·
     <a href="#architecture">Architecture</a> ·
     <a href="#quick-start">Quick start</a> ·
-    <a href="#documentation">Documentation</a> ·
+    <a href="http://165.154.205.54/cpa_orbit/">Online Documentation</a> ·
     <a href="docs/CONTRIBUTING.md">Contributing</a>
   </p>
 </div>
@@ -152,8 +153,11 @@ npm run test:e2e
 
 ## Documentation
 
+Browse the complete, searchable documentation at **[165.154.205.54/cpa_orbit](http://165.154.205.54/cpa_orbit/)**. The repository links below remain available for offline reading and source review.
+
 | Area | Guide |
 |---|---|
+| Online documentation | **[Open documentation site](http://165.154.205.54/cpa_orbit/)** |
 | Architecture and ADRs | [docs/architecture](docs/architecture/README.md) |
 | Desktop development and distribution | [docs/development/desktop.md](docs/development/desktop.md) |
 | Backend API and security boundaries | [docs/development/backend.md](docs/development/backend.md) |

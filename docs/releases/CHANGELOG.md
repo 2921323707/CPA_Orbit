@@ -6,6 +6,14 @@ All notable CPA Orbit changes are documented here. Versions follow Semantic Vers
 
 ## [1.1.0] - 2026-07-19
 
+### Documentation
+
+- Made English the default documentation language and added route-matched Simplified Chinese pages.
+- Unified the fixed sidebar hierarchy and strengthened current-page highlighting.
+- Rebuilt the introduction with a compact summary and animated local-runtime reactor.
+- Added the public appreciation QR code and bilingual sponsorship presentation.
+- Published the static documentation under `/cpa_orbit/` without changing the existing server homepage.
+
 ### Added
 
 - Added a one-click Wails desktop control plane that starts or reuses the Monitor API and CLIProxyAPI while sharing browser data and settings.

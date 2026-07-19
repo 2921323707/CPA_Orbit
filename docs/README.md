@@ -1,36 +1,38 @@
-# CPA Orbit documentation
+# CPA Orbit 文档源码
 
-This directory is the canonical home for project documentation. The repository root intentionally keeps only the public entry point (`README.md`), license, and machine-readable project metadata.
+这一目录同时保存项目文档与 VitePress 静态站点。Markdown 是唯一内容源；站点构建只负责导航、检索与呈现，不引入服务端运行时。
 
-## Architecture
+在线文档：**[http://165.154.205.54/cpa_orbit/](http://165.154.205.54/cpa_orbit/)**
 
-- [System architecture and high-level diagrams](architecture/README.md)
-- [Architecture decision records](architecture/adr/)
+## 本地预览
 
-## Development
+```powershell
+cd docs
+npm install
+npm run dev
+```
 
-- [Desktop host, packaging, and data migration](development/desktop.md)
-- [Backend API, runtime storage, and security boundaries](development/backend.md)
-- [Design and implementation plans](development/plans/)
+## 生产构建
 
-## Releases
+```powershell
+cd docs
+npm ci
+npm run build
+```
 
-- [Changelog](releases/CHANGELOG.md)
-- [v1.1.0 release notes](releases/v1.1.0.md)
-- [v1.0.2 release notes](releases/v1.0.2.md)
+静态产物位于 `.vitepress/dist/`，可直接托管到 Nginx、Caddy、对象存储或任意静态站点平台。
 
-## Community
+## 内容地图
 
-- [Community handbook](community/README.md)
-- [Contributing guide](CONTRIBUTING.md)
-- [Code of Conduct](CODE_OF_CONDUCT.md)
-- [Security policy](SECURITY.md)
-- [Support policy](SUPPORT.md)
-- [Third-party notices](THIRD_PARTY_NOTICES.md)
-
-## Assets
-
-- `assets/showcase/` contains sanitized public product screenshots used by the root README.
-- Runtime credentials, imported subscription JSON, local settings, logs, and private verification captures are intentionally excluded from source control.
-
-The in-app operating guide is available at `http://127.0.0.1:5173/docs` while the development server or desktop application is running.
+- [打开在线文档](http://165.154.205.54/cpa_orbit/)
+- [站点首页](index.md)
+- [快速开始](guide/getting-started.md)
+- [模块介绍](modules/index.md)
+- [系统架构](architecture/README.md)
+- [后期扩展](roadmap.md)
+- [部署上线](deploy.md)
+- [参与贡献](contribute.md)
+- [赞助项目](sponsor.md)
+- [更新日志](releases/CHANGELOG.md)
+- [v1.1.0 发布说明](releases/v1.1.0.md)
+- [v1.0.2 发布说明](releases/v1.0.2.md)
