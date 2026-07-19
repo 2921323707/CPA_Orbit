@@ -13,6 +13,10 @@ server/*.test
 # Node
 web/node_modules/
 web/dist/
+web/package.json.md5
+web/playwright-report/
+web/test-results/
+web/blob-report/
 
 # Runtime state
 data/*.json

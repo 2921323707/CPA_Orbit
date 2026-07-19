@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Support and troubleshooting
+    url: https://github.com/2921323707/CPA_Orbit/blob/main/docs/SUPPORT.md
+    about: Read setup guidance and choose the correct support channel.
+  - name: Security policy
+    url: https://github.com/2921323707/CPA_Orbit/blob/main/docs/SECURITY.md
+    about: Do not disclose vulnerabilities or credentials in a public issue.

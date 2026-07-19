@@ -2,6 +2,29 @@
 
 All notable CPA Orbit changes are documented here. Versions follow Semantic Versioning.
 
+## [Unreleased] - 2026-07-19
+
+### Added
+
+- Added a one-click Wails desktop control plane that starts or reuses the Monitor API and CLIProxyAPI while sharing browser data and settings.
+- Added system tray behavior, close-to-tray, native notifications, taskbar flashing, startup-at-login, and Auto/Light/Dark theme settings.
+- Added subscription asset insights for health, recorded cost, average acquisition price, and seven-day expiry risk.
+- Added endpoint visibility, categorized documentation, polished Mermaid architecture diagrams, sanitized product showcase assets, GitHub community forms, CI, Dependabot, and Playwright E2E coverage.
+
+### Changed
+
+- Fixed the desktop window at 1280×800 and removed resize/aspect polling that caused visual flashing.
+- Decoupled Monitor API health from external CLIProxyAPI health so proxy downtime cannot mark the embedded backend offline.
+- Reworked Settings secondary navigation as stable in-page buttons without hash-router navigation or scroll-observer flicker.
+- Improved route progress, skeleton loading, status refresh behavior, responsive layout, and shared desktop/browser settings.
+
+### Fixed
+
+- Removed a blocking `window.confirm` from single-file imports with an optional empty acquisition price. WebView imports now start immediately and report progress in-page.
+- Fixed numeric acquisition prices being treated as strings before upload, which raised before the request was sent and left the desktop action stuck on “导入中”.
+- Fixed priced JSON imports stalling in WebView2 by keeping multipart uploads file-only, moving the optional price to a validated request parameter, adding a request timeout, and always restoring the import action state.
+- Fixed app and web data divergence by using one application runtime and one mutable data root.
+
 ## [1.0.2] - 2026-07-18
 
 ### 中文

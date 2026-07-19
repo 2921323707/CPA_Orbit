@@ -1,22 +1,58 @@
 name: Feature request
 description: Propose a focused improvement to CPA Orbit.
 title: "[Feature]: "
-labels: [enhancement]
+labels: [enhancement, triage]
 body:
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and discussions for this proposal.
+          required: true
+        - label: This request does not include credentials or private account data.
+          required: true
   - type: textarea
     id: problem
     attributes:
-      label: Problem
-      description: What workflow is currently difficult or missing?
+      label: Problem statement
+      description: What workflow is difficult, unsafe, or missing? Who is affected?
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
-      label: Proposed solution
+      label: Proposed outcome
+      description: Describe the desired behavior, not only a specific implementation.
     validations:
       required: true
   - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Existing workarounds or simpler options you evaluated.
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Primary area
+      options:
+        - Desktop integration
+        - Subscription operations
+        - Price monitoring and alerts
+        - CPA runtime
+        - GPT Plus and SMS
+        - Settings and appearance
+        - API or automation
+        - Documentation and community
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List observable conditions that would make this request complete.
+  - type: textarea
     id: security
     attributes:
-      label: Security and privacy impact
+      label: Security, privacy, and migration impact
+      description: Consider secrets, external requests, local files, compatibility, and data migration.

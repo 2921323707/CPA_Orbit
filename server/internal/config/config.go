@@ -19,16 +19,21 @@ const (
 )
 
 type Settings struct {
-	Threshold          float64 `json:"threshold"`
-	RefreshMinutes     int     `json:"refreshMinutes"`
-	WebhookURL         string  `json:"webhookUrl"`
-	BaseURL            string  `json:"baseUrl"`
-	APIKey             string  `json:"apiKey"`
-	CPAManagementKey   string  `json:"cpaManagementKey"`
-	LubanAPIKey        string  `json:"lubanApiKey"`
-	AllowRemoteBaseURL bool    `json:"allowRemoteBaseUrl"`
-	CPAAuthDir         string  `json:"cpaAuthDir"`
-	SyncToCPAAuthDir   bool    `json:"syncToCpaAuthDir"`
+	Threshold            float64 `json:"threshold"`
+	RefreshMinutes       int     `json:"refreshMinutes"`
+	WebhookURL           string  `json:"webhookUrl"`
+	BaseURL              string  `json:"baseUrl"`
+	APIKey               string  `json:"apiKey"`
+	CPAManagementKey     string  `json:"cpaManagementKey"`
+	LubanAPIKey          string  `json:"lubanApiKey"`
+	AllowRemoteBaseURL   bool    `json:"allowRemoteBaseUrl"`
+	CPAAuthDir           string  `json:"cpaAuthDir"`
+	SyncToCPAAuthDir     bool    `json:"syncToCpaAuthDir"`
+	ThemeMode            string  `json:"themeMode"`
+	StartOnLogin         bool    `json:"startOnLogin"`
+	CloseToTray          bool    `json:"closeToTray"`
+	DesktopNotifications bool    `json:"desktopNotifications"`
+	FlashOnAlert         bool    `json:"flashOnAlert"`
 }
 
 type PublicSettings struct {
@@ -42,6 +47,11 @@ type PublicSettings struct {
 	AllowRemoteBaseURL         bool    `json:"allowRemoteBaseUrl"`
 	CPAAuthDir                 string  `json:"cpaAuthDir"`
 	SyncToCPAAuthDir           bool    `json:"syncToCpaAuthDir"`
+	ThemeMode                  string  `json:"themeMode"`
+	StartOnLogin               bool    `json:"startOnLogin"`
+	CloseToTray                bool    `json:"closeToTray"`
+	DesktopNotifications       bool    `json:"desktopNotifications"`
+	FlashOnAlert               bool    `json:"flashOnAlert"`
 }
 
 type Store struct {
@@ -51,33 +61,65 @@ type Store struct {
 }
 
 func Defaults() Settings {
-	return Settings{Threshold: 1, RefreshMinutes: 5, BaseURL: DefaultBaseURL}
+	return Settings{Threshold: 1, RefreshMinutes: 5, BaseURL: DefaultBaseURL, ThemeMode: "auto", CloseToTray: true, DesktopNotifications: true, FlashOnAlert: true}
 }
 
 func NewStore(path string) (*Store, error) {
-	s := &Store{path: path, data: Defaults()}
+	s := &Store{path: path}
 	var loaded Settings
 	if err := storage.LoadJSON(path, &loaded); err != nil {
 		return nil, fmt.Errorf("load settings: %w", err)
 	}
+	data, err := settingsFromLoaded(loaded)
+	if err != nil {
+		return nil, fmt.Errorf("invalid persisted settings: %w", err)
+	}
+	s.data = data
+	return s, nil
+}
+
+func (s *Store) Reload() error {
+	var loaded Settings
+	if err := storage.LoadJSON(s.path, &loaded); err != nil {
+		return fmt.Errorf("load settings: %w", err)
+	}
+	data, err := settingsFromLoaded(loaded)
+	if err != nil {
+		return fmt.Errorf("invalid persisted settings: %w", err)
+	}
+	s.mu.Lock()
+	s.data = data
+	s.mu.Unlock()
+	return nil
+}
+
+func settingsFromLoaded(loaded Settings) (Settings, error) {
+	s := Defaults()
 	if loaded.Threshold > 0 {
-		s.data.Threshold = loaded.Threshold
+		s.Threshold = loaded.Threshold
 	}
 	if loaded.RefreshMinutes > 0 {
-		s.data.RefreshMinutes = loaded.RefreshMinutes
+		s.RefreshMinutes = loaded.RefreshMinutes
 	}
 	if strings.TrimSpace(loaded.BaseURL) != "" {
-		s.data.BaseURL = strings.TrimSpace(loaded.BaseURL)
+		s.BaseURL = strings.TrimSpace(loaded.BaseURL)
 	}
-	s.data.WebhookURL = strings.TrimSpace(loaded.WebhookURL)
-	s.data.APIKey = loaded.APIKey
-	s.data.CPAManagementKey = loaded.CPAManagementKey
-	s.data.LubanAPIKey = loaded.LubanAPIKey
-	s.data.AllowRemoteBaseURL = loaded.AllowRemoteBaseURL
-	s.data.CPAAuthDir = strings.TrimSpace(loaded.CPAAuthDir)
-	s.data.SyncToCPAAuthDir = loaded.SyncToCPAAuthDir
-	if err := ValidateSettings(s.data); err != nil {
-		return nil, fmt.Errorf("invalid persisted settings: %w", err)
+	s.WebhookURL = strings.TrimSpace(loaded.WebhookURL)
+	s.APIKey = loaded.APIKey
+	s.CPAManagementKey = loaded.CPAManagementKey
+	s.LubanAPIKey = loaded.LubanAPIKey
+	s.AllowRemoteBaseURL = loaded.AllowRemoteBaseURL
+	s.CPAAuthDir = strings.TrimSpace(loaded.CPAAuthDir)
+	s.SyncToCPAAuthDir = loaded.SyncToCPAAuthDir
+	if strings.TrimSpace(loaded.ThemeMode) != "" {
+		s.ThemeMode = strings.ToLower(strings.TrimSpace(loaded.ThemeMode))
+		s.StartOnLogin = loaded.StartOnLogin
+		s.CloseToTray = loaded.CloseToTray
+		s.DesktopNotifications = loaded.DesktopNotifications
+		s.FlashOnAlert = loaded.FlashOnAlert
+	}
+	if err := ValidateSettings(s); err != nil {
+		return Settings{}, err
 	}
 	return s, nil
 }
@@ -96,7 +138,9 @@ func (s *Store) Public() PublicSettings {
 		APIKeyConfigured: v.APIKey != "", CPAManagementKeyConfigured: v.CPAManagementKey != "",
 		LubanAPIKeyConfigured: v.LubanAPIKey != "",
 		AllowRemoteBaseURL:    v.AllowRemoteBaseURL, CPAAuthDir: v.CPAAuthDir,
-		SyncToCPAAuthDir: v.SyncToCPAAuthDir,
+		SyncToCPAAuthDir: v.SyncToCPAAuthDir, ThemeMode: v.ThemeMode,
+		StartOnLogin: v.StartOnLogin, CloseToTray: v.CloseToTray,
+		DesktopNotifications: v.DesktopNotifications, FlashOnAlert: v.FlashOnAlert,
 	}
 }
 
@@ -108,6 +152,7 @@ func (s *Store) Update(v Settings) error {
 	v.BaseURL = strings.TrimRight(strings.TrimSpace(v.BaseURL), "/")
 	v.CPAAuthDir = strings.TrimSpace(v.CPAAuthDir)
 	v.LubanAPIKey = strings.TrimSpace(v.LubanAPIKey)
+	v.ThemeMode = strings.ToLower(strings.TrimSpace(v.ThemeMode))
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := storage.SaveJSON(s.path, v); err != nil {
@@ -123,6 +168,9 @@ func ValidateSettings(v Settings) error {
 	}
 	if v.RefreshMinutes < 1 || v.RefreshMinutes > 1440 {
 		return errors.New("refreshMinutes must be between 1 and 1440")
+	}
+	if v.ThemeMode != "light" && v.ThemeMode != "dark" && v.ThemeMode != "auto" {
+		return errors.New("themeMode must be light, dark, or auto")
 	}
 	if err := ValidateBaseURL(v.BaseURL, v.AllowRemoteBaseURL); err != nil {
 		return fmt.Errorf("baseUrl: %w", err)

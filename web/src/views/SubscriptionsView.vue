@@ -10,7 +10,7 @@ import StatusBadge from '../components/common/StatusBadge.vue'
 import QuotaCell from '../components/subscriptions/QuotaCell.vue'
 import { useToast } from '../composables/useToast'
 import { api } from '../services/api'
-import type { Subscription, SubscriptionConnectivity } from '../types/api'
+import type { Subscription, SubscriptionConnectivity, SubscriptionInsights } from '../types/api'
 import { formatCurrency, formatDateTime, getErrorMessage } from '../utils/format'
 import {
   subscriptionAccountId,
@@ -29,12 +29,13 @@ const page = ref(1)
 const pageSize = 10
 const totalPages = ref(0)
 const folders = ref<string[]>([])
+const insights = ref<SubscriptionInsights>({ normal: 0, error: 0, priced: 0, totalCost: 0, averageCost: 0, expiringSoon: 0 })
 const loading = ref(true)
 const error = ref('')
 const selected = ref<Subscription | null>(null)
 const selectedIds = ref(new Set<string | number>())
 const files = ref<File[]>([])
-const acquisitionPrice = ref('')
+const acquisitionPrice = ref<string | number>('')
 const importing = ref(false)
 const dragging = ref(false)
 const search = ref('')
@@ -96,6 +97,7 @@ async function load() {
     page.value = result.page || 1
     totalPages.value = result.totalPages
     folders.value = result.folders || []
+    insights.value = result.insights || { normal: 0, error: 0, priced: 0, totalCost: 0, averageCost: 0, expiringSoon: 0 }
     selectedIds.value = new Set()
     for (const item of subscriptions.value) {
       await testOne(item, true)
@@ -109,33 +111,40 @@ async function load() {
 
 async function importFiles() {
   if (!files.value.length) return toast.error('请先选择 JSON 文件')
-  if (files.value.length === 1 && !acquisitionPrice.value.trim()) {
-    const proceed = window.confirm('未填写“入手价格”。该项为非必填，仍要继续导入吗？')
-    if (!proceed) return
-  }
-  importing.value = true
   const queued = [...files.value]
-  let imported = 0
-  let failed = 0
-  const failureDetails: string[] = []
-  for (const file of queued) {
-    try {
-      await api.importSubscriptions({ file, acquisitionPrice: queued.length === 1 ? acquisitionPrice.value.trim() : undefined })
-      imported += 1
-    } catch (err) {
-      failed += 1
-      failureDetails.push(`${file.name}：${getErrorMessage(err)}`)
+  // Vue normalizes <input type="number"> values to numbers. Converting at
+  // the boundary avoids calling String-only methods on a numeric price.
+  const normalizedPrice = String(acquisitionPrice.value ?? '').trim()
+  importing.value = true
+  try {
+    if (queued.length === 1 && !normalizedPrice) {
+      toast.show('未填写入手价格，将按可选字段为空继续导入', 'info')
     }
+    let imported = 0
+    let failed = 0
+    const failureDetails: string[] = []
+    for (const file of queued) {
+      try {
+        await api.importSubscriptions({ file, acquisitionPrice: queued.length === 1 ? normalizedPrice : undefined })
+        imported += 1
+      } catch (err) {
+        failed += 1
+        failureDetails.push(`${file.name}：${getErrorMessage(err)}`)
+      }
+    }
+    const message = `导入完成：成功 ${imported} · 失败 ${failed}`
+    if (failed) toast.error(`${message}；${failureDetails.slice(0, 2).join('；')}`)
+    else toast.success(message)
+    files.value = []
+    acquisitionPrice.value = ''
+    if (fileInput.value) fileInput.value.value = ''
+    page.value = 1
+  } finally {
+    // Never let a failed request or a post-import refresh leave the primary
+    // action permanently disabled as “导入中”.
+    importing.value = false
   }
-  const message = `导入完成：成功 ${imported} · 失败 ${failed}`
-  if (failed) toast.error(`${message}；${failureDetails.slice(0, 2).join('；')}`)
-  else toast.success(message)
-  files.value = []
-  acquisitionPrice.value = ''
-  if (fileInput.value) fileInput.value.value = ''
-  page.value = 1
   await load()
-  importing.value = false
 }
 
 async function testOne(item: Subscription, quiet = false) {
@@ -307,6 +316,13 @@ onMounted(load)
           <button class="button button--secondary button--small" type="button" :disabled="batchSyncing || !selectedItems.length" @click="syncSelected"><FolderSync :size="15" />{{ batchSyncing ? '同步中' : '批量同步' }}</button>
           <button class="button button--danger button--small" type="button" :disabled="batchDeleting || !selectedItems.length" @click="deleteSelected"><Trash2 :size="15" />{{ batchDeleting ? '删除中' : '删除所选' }}</button>
         </div>
+      </div>
+      <div class="subscription-insights" aria-label="订阅资产洞察">
+        <div class="subscription-insight"><span>当前结果</span><strong>{{ total }}</strong><small>条订阅归档</small></div>
+        <div class="subscription-insight subscription-insight--success"><span>账户健康</span><strong>{{ insights.normal }}</strong><small>{{ insights.error }} 条异常</small></div>
+        <div class="subscription-insight subscription-insight--accent"><span>已记录成本</span><strong>{{ formatCurrency(insights.totalCost) }}</strong><small>{{ insights.priced }} 条有价格</small></div>
+        <div class="subscription-insight"><span>平均入手价</span><strong>{{ insights.priced ? formatCurrency(insights.averageCost) : '—' }}</strong><small>仅统计已标价订阅</small></div>
+        <div class="subscription-insight" :class="{ 'subscription-insight--warning': insights.expiringSoon > 0 }"><span>即将到期</span><strong>{{ insights.expiringSoon }}</strong><small>剩余 7 天以内</small></div>
       </div>
       <div class="filters" aria-label="订阅筛选">
         <label class="search-field"><Search :size="17" /><span class="sr-only">搜索订阅</span><input v-model="search" type="search" placeholder="搜索邮箱、文件、account id" /></label>

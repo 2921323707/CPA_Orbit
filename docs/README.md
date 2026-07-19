@@ -1,19 +1,35 @@
-# CPA Orbit Documentation · v1.0.2
+# CPA Orbit documentation
 
-- [Release notes / 更新日志](CHANGELOG.md)
-- [Architecture decisions](adr/)
-- [Design notes](plans/)
-- [Contributing](../CONTRIBUTING.md)
-- [Security policy](../SECURITY.md)
-- [Support](../SUPPORT.md)
-- In-app documentation: `http://127.0.0.1:5173/docs`
+This directory is the canonical home for project documentation. The repository root intentionally keeps only the public entry point (`README.md`), license, and machine-readable project metadata.
 
-Runtime credentials, imported JSON files, local settings, screenshots, and verification artifacts are intentionally excluded from documentation and source control.
+## Architecture
 
-## 数据来源与致谢
+- [System architecture and high-level diagrams](architecture/README.md)
+- [Architecture decision records](architecture/adr/)
 
-报价页使用 [PriceAI](https://priceai.cc/) 的公开商品与价格数据；购买跳转和订单查询使用 [链动小铺 LXDP](https://pay.ldxp.cn/) 提供的链路。感谢两边为这个小工具提供稳定的数据入口。CPA Orbit 只负责聚合、记录和跳转，具体价格、库存、支付与售后以来源平台为准。
+## Development
 
-## Data sources and thanks
+- [Desktop host, packaging, and data migration](development/desktop.md)
+- [Backend API, runtime storage, and security boundaries](development/backend.md)
+- [Design and implementation plans](development/plans/)
 
-Offer data comes from the public product and pricing pages of [PriceAI](https://priceai.cc/). Checkout redirects and order lookup use the path provided by [LXDP](https://pay.ldxp.cn/). CPA Orbit only aggregates, records, and redirects; the source platforms remain authoritative for live prices, stock, payment, and after-sales terms.
+## Releases
+
+- [Changelog](releases/CHANGELOG.md)
+- [v1.0.2 release notes](releases/v1.0.2.md)
+
+## Community
+
+- [Community handbook](community/README.md)
+- [Contributing guide](CONTRIBUTING.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security policy](SECURITY.md)
+- [Support policy](SUPPORT.md)
+- [Third-party notices](THIRD_PARTY_NOTICES.md)
+
+## Assets
+
+- `assets/showcase/` contains sanitized public product screenshots used by the root README.
+- Runtime credentials, imported subscription JSON, local settings, logs, and private verification captures are intentionally excluded from source control.
+
+The in-app operating guide is available at `http://127.0.0.1:5173/docs` while the development server or desktop application is running.

@@ -207,6 +207,11 @@ export interface Settings {
   cpa_auth_dir?: string
   syncToCpaAuthDir?: boolean
   sync_to_cpa_auth_dir?: boolean
+  themeMode?: 'light' | 'dark' | 'auto'
+  startOnLogin?: boolean
+  closeToTray?: boolean
+  desktopNotifications?: boolean
+  flashOnAlert?: boolean
   [key: string]: unknown
 }
 
@@ -217,6 +222,16 @@ export interface SubscriptionPage {
   pageSize: number
   totalPages: number
   folders: string[]
+  insights?: SubscriptionInsights
+}
+
+export interface SubscriptionInsights {
+  normal: number
+  error: number
+  priced: number
+  totalCost: number
+  averageCost: number
+  expiringSoon: number
 }
 
 export interface SubscriptionQuery {

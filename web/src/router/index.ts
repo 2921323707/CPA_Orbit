@@ -1,8 +1,8 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router'
 import { beginNavigation, finishNavigation } from './navigationLoad'
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: import.meta.env.VITE_DESKTOP === 'true' ? createWebHashHistory() : createWebHistory(),
   routes: [
     { path: '/', name: 'dashboard', component: () => import('../views/DashboardView.vue'), meta: { titleKey: 'nav.dashboard' } },
     { path: '/offers', name: 'offers', component: () => import('../views/OffersView.vue'), meta: { titleKey: 'nav.offers' } },

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "CPA Orbit",
+  "outputfilename": "CPAOrbit",
+  "frontend:dir": "../web",
+  "wailsjsdir": "frontend",
+  "frontend:install": "npm ci",
+  "frontend:build": "npm run build:desktop",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "CPA Orbit Contributors",
+    "email": ""
+  },
+  "info": {
+    "companyName": "CPA Orbit",
+    "productName": "CPA Orbit",
+    "productVersion": "1.0.2",
+    "copyright": "Copyright © 2026 CPA Orbit Contributors",
+    "comments": "Local-first CPA subscription and price monitoring desktop application"
+  }
+}

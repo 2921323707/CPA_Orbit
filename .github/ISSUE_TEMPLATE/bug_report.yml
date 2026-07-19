@@ -1,28 +1,64 @@
 name: Bug report
-description: Report a reproducible CPA Orbit defect without including secrets.
+description: Report a reproducible CPA Orbit defect without exposing secrets.
 title: "[Bug]: "
-labels: [bug]
+labels: [bug, triage]
 body:
   - type: markdown
     attributes:
-      value: Never attach CPA JSON, API keys, OAuth tokens, or private account data.
+      value: |
+        Thanks for helping improve CPA Orbit. Never attach subscription JSON, OAuth tokens, API keys, account lists, private logs, or screenshots containing personal data.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+        - label: I removed credentials and personal data from this report.
+          required: true
   - type: input
     id: version
     attributes:
-      label: Version
-      placeholder: v1.0.2
+      label: CPA Orbit version or commit
+      placeholder: v1.0.2 or 1a2b3c4
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - Windows desktop app
+        - Browser console
+        - Monitor API
+        - CLIProxyAPI integration
+        - Build or packaging
+        - Documentation
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS version, architecture, browser/WebView2 version, and relevant Go/Node versions.
+      placeholder: Windows 11 24H2, amd64, WebView2 138
     validations:
       required: true
   - type: textarea
     id: description
     attributes:
       label: What happened?
+      description: Describe the observed behavior and impact.
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
       label: Reproduction steps
+      placeholder: |
+        1. Start ...
+        2. Open ...
+        3. Click ...
     validations:
       required: true
   - type: textarea
@@ -31,3 +67,13 @@ body:
       label: Expected behavior
     validations:
       required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Add minimal logs, screenshots, or recordings with all secrets and account data removed.
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Configuration choices, frequency, workarounds, or regression range.
