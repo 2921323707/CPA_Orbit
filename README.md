@@ -35,24 +35,11 @@ CPA Orbit brings the operational paths that normally live across scripts, browse
 
 ## Showcase
 
-<table aria-label="CPA Orbit application showcase">
-  <tr>
-    <td width="50%" align="center" valign="middle">
-      <img src="docs/assets/showcase/overview.png" width="640" height="360" alt="CPA Orbit operations overview" />
-    </td>
-    <td width="50%" align="center" valign="middle">
-      <img src="docs/assets/showcase/sms-verification.png" width="640" height="360" alt="GPT Plus SMS verification workflow" />
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" align="center" valign="middle">
-      <img src="docs/assets/showcase/subscriptions.png" width="640" height="360" alt="Subscription import and quota operations" />
-    </td>
-    <td width="50%" align="center" valign="middle">
-      <img src="docs/assets/showcase/documentation.png" width="640" height="360" alt="In-app documentation and operating guide" />
-    </td>
-  </tr>
-</table>
+<p align="center">
+  <a href="docs/assets/showcase/showcase-grid.png">
+    <img src="docs/assets/showcase/showcase-grid.png" width="100%" alt="CPA Orbit application showcase: overview, GPT Plus verification, subscriptions, and documentation" />
+  </a>
+</p>
 
 > Showcase data is synthetic. Credential-bearing JSON, tokens, account lists, and private runtime screenshots are never committed.
 
