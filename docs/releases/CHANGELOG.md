@@ -20,6 +20,7 @@ All notable CPA Orbit changes are documented here. Versions follow Semantic Vers
 ### Fixed
 
 - Removed a blocking `window.confirm` from single-file imports with an optional empty acquisition price. WebView imports now start immediately and report progress in-page.
+- Fixed priced JSON imports stalling in WebView2 by keeping multipart uploads file-only, moving the optional price to a validated request parameter, adding a request timeout, and always restoring the import action state.
 - Fixed app and web data divergence by using one application runtime and one mutable data root.
 
 ## [1.0.2] - 2026-07-18

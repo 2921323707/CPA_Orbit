@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 async function mockOrbitApi(page: Page) {
   let importRequests = 0
+  const importPrices: Array<string | null> = []
 
   await page.route('**/api/**', async (route) => {
     const request = route.request()
@@ -18,6 +19,7 @@ async function mockOrbitApi(page: Page) {
     }
     if (path.endsWith('/api/subscriptions/import') && request.method() === 'POST') {
       importRequests += 1
+      importPrices.push(new URL(request.url()).searchParams.get('acquisitionPrice'))
       return route.fulfill({ status: 200, json: { message: 'Imported' } })
     }
     if (path.endsWith('/api/subscriptions') && request.method() === 'GET') {
@@ -27,11 +29,14 @@ async function mockOrbitApi(page: Page) {
     return route.fulfill({ status: 404, json: { message: `Unhandled test route: ${path}` } })
   })
 
-  return () => importRequests
+  return {
+    count: () => importRequests,
+    prices: () => [...importPrices],
+  }
 }
 
 test('single-file import proceeds without a blocking browser dialog', async ({ page }) => {
-  const importRequestCount = await mockOrbitApi(page)
+  const imports = await mockOrbitApi(page)
   const dialogs: string[] = []
   page.on('dialog', async (dialog) => {
     dialogs.push(dialog.message())
@@ -46,9 +51,28 @@ test('single-file import proceeds without a blocking browser dialog', async ({ p
   })
   await page.getByRole('button', { name: '开始导入' }).click()
 
-  await expect.poll(importRequestCount).toBe(1)
+  await expect.poll(imports.count).toBe(1)
   await expect(page.getByText('导入完成：成功 1 · 失败 0')).toBeVisible()
+  expect(imports.prices()).toEqual([null])
   expect(dialogs).toEqual([])
+})
+
+test('single-file import with a price completes without mixed multipart fields', async ({ page }) => {
+  const imports = await mockOrbitApi(page)
+
+  await page.goto('/subscriptions')
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'priced-subscription.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify({ type: 'codex', email: 'priced@example.invalid', access_token: 'test-only' })),
+  })
+  await page.getByRole('spinbutton', { name: '入手价格 可选' }).fill('12.34')
+  await page.getByRole('button', { name: '开始导入' }).click()
+
+  await expect.poll(imports.count).toBe(1)
+  await expect(page.getByText('导入完成：成功 1 · 失败 0')).toBeVisible()
+  await expect(page.getByRole('button', { name: '导入中…' })).toHaveCount(0)
+  expect(imports.prices()).toEqual(['12.34'])
 })
 
 test('settings directory scrolls within the page without changing route', async ({ page }) => {

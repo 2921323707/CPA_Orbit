@@ -96,21 +96,40 @@ export const api = {
     const suffix = params.size ? `?${params.toString()}` : ''
     return request<SubscriptionPage>(`/subscriptions${suffix}`)
   },
-  importSubscriptions(options: ImportSubscriptionsOptions) {
+  async importSubscriptions(options: ImportSubscriptionsOptions) {
     const body = new FormData()
     // WebView2 can expose the selected File metadata correctly while sending
     // an empty multipart part when the original File object is appended
     // directly. Read the file first and rebuild a Blob so desktop and browser
     // clients send the same bytes to the Go API.
-    return options.file.text().then((text) => {
-      const normalized = text.replace(/^\uFEFF/, '')
-      if (!normalized.trim()) {
-        throw new ApiError('选择的 JSON 文件为空或无法读取', 400)
+    const normalized = (await options.file.text()).replace(/^\uFEFF/, '')
+    if (!normalized.trim()) {
+      throw new ApiError('选择的 JSON 文件为空或无法读取', 400)
+    }
+    body.append('file', new Blob([normalized], { type: 'application/json' }), options.file.name)
+
+    // WebView2 can stall while serializing a multipart body that mixes a
+    // rebuilt Blob with a trailing scalar field. Keep the body file-only and
+    // send the optional non-sensitive price as a query parameter instead.
+    const params = new URLSearchParams()
+    if (options.acquisitionPrice) params.set('acquisitionPrice', options.acquisitionPrice)
+    const suffix = params.size ? `?${params.toString()}` : ''
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 20_000)
+    try {
+      return await request<ApiMessage>(`/subscriptions/import${suffix}`, {
+        method: 'POST',
+        body,
+        signal: controller.signal,
+      })
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new ApiError('导入请求超时，请检查后端状态后重试', 0)
       }
-      body.append('file', new Blob([normalized], { type: 'application/json' }), options.file.name)
-      if (options.acquisitionPrice) body.append('acquisitionPrice', options.acquisitionPrice)
-      return request<ApiMessage>('/subscriptions/import', { method: 'POST', body })
-    })
+      throw error
+    } finally {
+      window.clearTimeout(timeout)
+    }
   },
   testSubscription: (id: string | number) => request<SubscriptionConnectivity>(`/subscriptions/${encodeURIComponent(id)}/test`, { method: 'POST' }),
   syncSubscription: (id: string | number) => request<ApiMessage>(`/subscriptions/${encodeURIComponent(id)}/sync`, { method: 'POST' }),

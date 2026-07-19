@@ -464,7 +464,11 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusRequestEntityTooLarge, "upload_too_large", "JSON file exceeds 2 MB")
 		return
 	}
-	sub, synced, err := s.subs.ImportWithOptions(data, header.Filename, subscriptions.ImportOptions{AcquisitionPrice: r.FormValue("acquisitionPrice")})
+	acquisitionPrice := strings.TrimSpace(r.FormValue("acquisitionPrice"))
+	if acquisitionPrice == "" {
+		acquisitionPrice = strings.TrimSpace(r.URL.Query().Get("acquisitionPrice"))
+	}
+	sub, synced, err := s.subs.ImportWithOptions(data, header.Filename, subscriptions.ImportOptions{AcquisitionPrice: acquisitionPrice})
 	if errors.Is(err, subscriptions.ErrDuplicateSubscription) {
 		message := "订阅未导入：相同账号已经存在"
 		var duplicate *subscriptions.DuplicateSubscriptionError

@@ -114,27 +114,32 @@ async function importFiles() {
   if (queued.length === 1 && !acquisitionPrice.value.trim()) {
     toast.show('未填写入手价格，将按可选字段为空继续导入', 'info')
   }
-  let imported = 0
-  let failed = 0
-  const failureDetails: string[] = []
-  for (const file of queued) {
-    try {
-      await api.importSubscriptions({ file, acquisitionPrice: queued.length === 1 ? acquisitionPrice.value.trim() : undefined })
-      imported += 1
-    } catch (err) {
-      failed += 1
-      failureDetails.push(`${file.name}：${getErrorMessage(err)}`)
+  try {
+    let imported = 0
+    let failed = 0
+    const failureDetails: string[] = []
+    for (const file of queued) {
+      try {
+        await api.importSubscriptions({ file, acquisitionPrice: queued.length === 1 ? acquisitionPrice.value.trim() : undefined })
+        imported += 1
+      } catch (err) {
+        failed += 1
+        failureDetails.push(`${file.name}：${getErrorMessage(err)}`)
+      }
     }
+    const message = `导入完成：成功 ${imported} · 失败 ${failed}`
+    if (failed) toast.error(`${message}；${failureDetails.slice(0, 2).join('；')}`)
+    else toast.success(message)
+    files.value = []
+    acquisitionPrice.value = ''
+    if (fileInput.value) fileInput.value.value = ''
+    page.value = 1
+  } finally {
+    // Never let a failed request or a post-import refresh leave the primary
+    // action permanently disabled as “导入中”.
+    importing.value = false
   }
-  const message = `导入完成：成功 ${imported} · 失败 ${failed}`
-  if (failed) toast.error(`${message}；${failureDetails.slice(0, 2).join('；')}`)
-  else toast.success(message)
-  files.value = []
-  acquisitionPrice.value = ''
-  if (fileInput.value) fileInput.value.value = ''
-  page.value = 1
   await load()
-  importing.value = false
 }
 
 async function testOne(item: Subscription, quiet = false) {
