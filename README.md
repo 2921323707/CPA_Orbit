@@ -4,9 +4,15 @@
   <p><strong>A local-first operations console for AI subscriptions, price intelligence, quota health, and CPA proxy runtime.</strong></p>
 
   <p>
+    <a href="http://165.154.205.54/cpa_orbit/">
+      <img src="https://img.shields.io/badge/OPEN_ONLINE_DOCUMENTATION-0B6159?style=for-the-badge&amp;logo=readthedocs&amp;logoColor=white" alt="Open CPA Orbit online documentation" />
+    </a>
+  </p>
+  <p><a href="http://165.154.205.54/cpa_orbit/"><strong>English · 简体中文 · Searchable guides, architecture, deployment, and releases</strong></a></p>
+
+  <p>
     <a href="https://github.com/2921323707/CPA_Orbit/actions"><img src="https://img.shields.io/badge/CI-configured-2088FF?style=flat-square&amp;logo=githubactions&amp;logoColor=white" alt="CI configured" /></a>
     <a href="https://github.com/2921323707/CPA_Orbit/releases"><img src="https://img.shields.io/badge/version-v1.1.0-2563EB?style=flat-square" alt="Version 1.1.0" /></a>
-    <a href="http://165.154.205.54/cpa_orbit/"><img src="https://img.shields.io/badge/docs-online-0B6159?style=flat-square" alt="Online documentation" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22C55E?style=flat-square" alt="MIT License" /></a>
     <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?style=flat-square&amp;logo=go&amp;logoColor=white" alt="Go 1.25 or newer" /></a>
     <a href="https://vuejs.org/"><img src="https://img.shields.io/badge/Vue-3.5-42B883?style=flat-square&amp;logo=vuedotjs&amp;logoColor=white" alt="Vue 3.5" /></a>
