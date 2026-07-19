@@ -35,21 +35,22 @@ CPA Orbit brings the operational paths that normally live across scripts, browse
 
 ## Showcase
 
-### Operations overview
-
-![CPA Orbit operations overview](docs/assets/showcase/overview.png)
-
-<table>
+<table aria-label="CPA Orbit application showcase">
   <tr>
-    <td width="50%"><img src="docs/assets/showcase/subscriptions.png" alt="Subscription import and quota operations" /></td>
-    <td width="50%"><img src="docs/assets/showcase/sms-verification.png" alt="GPT Plus SMS verification workflow" /></td>
+    <td width="50%" align="center" valign="middle">
+      <img src="docs/assets/showcase/overview.png" width="640" height="360" alt="CPA Orbit operations overview" />
+    </td>
+    <td width="50%" align="center" valign="middle">
+      <img src="docs/assets/showcase/sms-verification.png" width="640" height="360" alt="GPT Plus SMS verification workflow" />
+    </td>
   </tr>
   <tr>
-    <td align="center"><strong>Subscription lifecycle</strong></td>
-    <td align="center"><strong>SMS verification</strong></td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="docs/assets/showcase/documentation.png" alt="In-app documentation and operating guide" /></td>
+    <td width="50%" align="center" valign="middle">
+      <img src="docs/assets/showcase/subscriptions.png" width="640" height="360" alt="Subscription import and quota operations" />
+    </td>
+    <td width="50%" align="center" valign="middle">
+      <img src="docs/assets/showcase/documentation.png" width="640" height="360" alt="In-app documentation and operating guide" />
+    </td>
   </tr>
 </table>
 
