@@ -81,12 +81,15 @@ test('single-file import with a price completes without mixed multipart fields',
   expect(imports.prices()).toEqual(['12.34'])
 })
 
-test('settings directory scrolls within the page without changing route', async ({ page }) => {
+test('settings directory opens query-backed independent pages', async ({ page }) => {
   await mockOrbitApi(page)
   await page.goto('/settings')
 
-  await page.getByRole('button', { name: 'CPA 同步' }).click()
+  const cpaSectionButton = page.getByRole('button', { name: 'CPA 同步' })
+  await cpaSectionButton.click()
 
-  await expect(page).toHaveURL(/\/settings$/)
-  await expect(page.locator('#settings-cpa')).toBeInViewport()
+  await expect(page).toHaveURL(/\/settings\?section=cpa$/)
+  await expect(cpaSectionButton).toHaveClass(/is-active/)
+  await expect(page.getByRole('heading', { name: 'CLIProxyAPI 同步' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '监控设置' })).toHaveCount(0)
 })
