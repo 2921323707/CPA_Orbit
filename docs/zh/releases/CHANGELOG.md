@@ -5,6 +5,13 @@ description: CPA Orbit 版本变化摘要。
 
 # 更新日志
 
+## v1.2.1
+
+- 新增原生 macOS Apple Silicon CI 构建，并发布 ARM64 DMG、ZIP 和 SHA-256 校验文件。
+- 在 macOS 打包流程中加入 Mach-O 架构检查和 DMG 验证。
+- 修正 Wails 生成的 `CPA Orbit.app` 应用包路径。
+- 感谢 [@tomatokoko](https://github.com/tomatokoko) 在 [issue #9](https://github.com/2921323707/CPA_Orbit/issues/9) 中提出原生 Apple Silicon 支持需求并推动本次发布。
+
 ## v1.1.0
 
 - 文档默认语言改为英文，并加入对应路由的简体中文切换。
