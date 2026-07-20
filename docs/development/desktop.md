@@ -26,7 +26,9 @@ Run on a Mac with Go 1.25+, Node.js/npm, and Xcode Command Line Tools:
 ./app/build-macos.sh
 ```
 
-The script builds the current machine architecture and writes `CPAOrbit.app` plus a distributable ZIP to `app/build/bin`. Set `CPA_ORBIT_MAC_ARCH=universal` to build a universal application. For signing, set `CPA_ORBIT_CODESIGN_IDENTITY` to the signing identity before running the script. Apple notarization is intentionally left to the release environment because it requires private Apple credentials.
+The script builds the current machine architecture and writes `CPA Orbit.app`, a distributable ZIP, a drag-to-install DMG, and `CHECKSUMS-SHA256.txt` to `app/build/bin`. Set `CPA_ORBIT_MAC_ARCH=arm64` for an Apple Silicon-only package or `CPA_ORBIT_MAC_ARCH=universal` for a universal application. The script validates the executable architecture and verifies the generated disk image before completing.
+
+GitHub Actions runs the ARM64 build natively on Apple Silicon for every pull request and `main` update. Tags matching `v*` publish the DMG, ZIP, and checksums to the corresponding GitHub Release. For signing, set `CPA_ORBIT_CODESIGN_IDENTITY` to the signing identity before running the script. Apple notarization is intentionally left to a credentialed release environment because it requires private Apple credentials.
 
 ## One-click services and shared data
 

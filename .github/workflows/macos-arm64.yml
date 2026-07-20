@@ -1,0 +1,72 @@
+name: macOS ARM64
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-arm64-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Native Apple Silicon DMG
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: app/go.mod
+          cache-dependency-path: |
+            app/go.sum
+            server/go.sum
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Verify native ARM64 runner
+        run: test "$(uname -m)" = arm64
+      - name: Build and package DMG
+        env:
+          CPA_ORBIT_MAC_ARCH: arm64
+        run: ./app/build-macos.sh
+      - name: Verify application architecture
+        run: test "$(lipo -archs 'app/build/bin/CPA Orbit.app/Contents/MacOS/CPAOrbit')" = arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CPAOrbit-macos-arm64
+          path: |
+            app/build/bin/CPAOrbit-macos-arm64.dmg
+            app/build/bin/CPAOrbit-macos-arm64.zip
+            app/build/bin/CHECKSUMS-SHA256.txt
+          if-no-files-found: error
+
+  release:
+    name: Publish macOS assets
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: CPAOrbit-macos-arm64
+          path: dist
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --verify-tag
+          fi

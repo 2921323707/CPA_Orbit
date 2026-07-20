@@ -149,6 +149,14 @@ cd CPA_Orbit
 
 The portable executable is written to `app/build/bin/CPAOrbit.exe`. A repository build automatically shares the root `data/` and `k12/` directories with the browser console and starts or reuses all required local services.
 
+### macOS Apple Silicon build
+
+```bash
+CPA_ORBIT_MAC_ARCH=arm64 ./app/build-macos.sh
+```
+
+On an Apple Silicon Mac, this writes a native `CPA Orbit.app`, ZIP, drag-to-install DMG, and SHA-256 checksums to `app/build/bin`. Pull requests and `main` updates build the ARM64 package on a native GitHub Actions runner; `v*` tags publish the package to GitHub Releases.
+
 ## Verification
 
 ```powershell
