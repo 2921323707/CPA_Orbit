@@ -34,5 +34,6 @@ npm run build
 - [参与贡献](contribute.md)
 - [赞助项目](sponsor.md)
 - [更新日志](releases/CHANGELOG.md)
+- [v1.2.0 发布说明](releases/v1.2.0.md)
 - [v1.1.0 发布说明](releases/v1.1.0.md)
 - [v1.0.2 发布说明](releases/v1.0.2.md)

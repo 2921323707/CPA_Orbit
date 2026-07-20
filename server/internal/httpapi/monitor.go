@@ -41,6 +41,22 @@ type Monitor struct {
 	reset          chan struct{}
 }
 
+var ErrInvalidPriceHistorySource = errors.New("price history source must be k12 or gpt-plus")
+
+const maxRetainedAlerts = 10
+
+func keepRecentAlerts(alerts []model.Alert, limit int) []model.Alert {
+	if limit <= 0 || len(alerts) == 0 {
+		return []model.Alert{}
+	}
+	kept := append([]model.Alert(nil), alerts...)
+	sort.SliceStable(kept, func(i, j int) bool { return kept[i].CreatedAt.Before(kept[j].CreatedAt) })
+	if len(kept) > limit {
+		kept = append([]model.Alert(nil), kept[len(kept)-limit:]...)
+	}
+	return kept
+}
+
 func (m *Monitor) SetAlertHandler(handler func(model.Alert)) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -88,6 +104,13 @@ func NewMonitor(offersPath, alertsPath string, settings *config.Store, scraperCl
 	if m.alerts == nil {
 		m.alerts = []model.Alert{}
 	}
+	loadedAlertCount := len(m.alerts)
+	m.alerts = keepRecentAlerts(m.alerts, maxRetainedAlerts)
+	if len(m.alerts) != loadedAlertCount {
+		if err := storage.SaveJSON(alertsPath, m.alerts); err != nil {
+			return nil, fmt.Errorf("trim alerts: %w", err)
+		}
+	}
 	return m, nil
 }
 
@@ -101,6 +124,47 @@ func (m *Monitor) GPTPlusPriceHistory() []model.PriceSample {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return append([]model.PriceSample(nil), m.gptPlusHistory...)
+}
+
+func (m *Monitor) DeletePriceSample(source string, at time.Time) (bool, error) {
+	m.refreshMu.Lock()
+	defer m.refreshMu.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var history *[]model.PriceSample
+	var historyPath string
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "k12":
+		history = &m.priceHistory
+		historyPath = m.historyPath
+	case "gpt-plus":
+		history = &m.gptPlusHistory
+		historyPath = m.gptHistoryPath
+	default:
+		return false, ErrInvalidPriceHistorySource
+	}
+
+	kept := make([]model.PriceSample, 0, len(*history))
+	deleted := false
+	for _, sample := range *history {
+		// Browser Date values preserve milliseconds, while Go's persisted
+		// RFC3339 timestamps may contain finer precision. Compare at the
+		// precision that survives the frontend round trip.
+		if !deleted && sample.At.UnixMilli() == at.UnixMilli() {
+			deleted = true
+			continue
+		}
+		kept = append(kept, sample)
+	}
+	if !deleted {
+		return false, nil
+	}
+	if err := storage.SaveJSON(historyPath, kept); err != nil {
+		return false, err
+	}
+	*history = kept
+	return true, nil
 }
 
 func (m *Monitor) Offers() model.OffersFile {
@@ -178,7 +242,10 @@ func (m *Monitor) Refresh(ctx context.Context) (model.OffersFile, error) {
 	m.gptPlusHistory = append([]model.PriceSample(nil), plusHistory...)
 	m.mu.Unlock()
 	if len(offers) > 0 {
-		m.maybeAlert(ctx, offers[0])
+		m.maybeAlert(ctx, "k12", offers[0])
+	}
+	if plusSuccess && len(plusOffers) > 0 {
+		m.maybeAlert(ctx, "gpt-plus", plusOffers[0])
 	}
 	return state, nil
 }
@@ -219,11 +286,12 @@ func keepRecentPriceHistory(history []model.PriceSample, now time.Time) []model.
 	return kept
 }
 
-func (m *Monitor) maybeAlert(ctx context.Context, offer model.Offer) {
+func (m *Monitor) maybeAlert(ctx context.Context, source string, offer model.Offer) {
 	settings := m.settings.Get()
 	if offer.Price >= settings.Threshold {
 		return
 	}
+	source = normalizeAlertSource(source)
 	now := time.Now()
 	key := offer.ItemID
 	if key == "" {
@@ -235,19 +303,18 @@ func (m *Monitor) maybeAlert(ctx context.Context, offer model.Offer) {
 		if alertKey == "" {
 			alertKey = alert.OrderURL
 		}
-		if alertKey == key && alert.Price == offer.Price && now.Sub(alert.CreatedAt) < 30*time.Minute {
+		if normalizeAlertSource(alert.Source) == source && alertKey == key && alert.Price == offer.Price && now.Sub(alert.CreatedAt) < 30*time.Minute {
 			m.mu.Unlock()
 			return
 		}
 	}
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s|%.8f|%d", key, offer.Price, now.UnixNano())))
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%.8f|%d", source, key, offer.Price, now.UnixNano())))
 	alert := model.Alert{
-		ID: hex.EncodeToString(sum[:8]), ItemID: offer.ItemID, Title: offer.Title,
+		ID: hex.EncodeToString(sum[:8]), Source: source, ItemID: offer.ItemID, Title: offer.Title,
 		Price: offer.Price, Threshold: settings.Threshold, Merchant: offer.Merchant,
 		OrderURL: offer.OrderURL, CreatedAt: now,
 	}
-	m.alerts = append(m.alerts, alert)
-	index := len(m.alerts) - 1
+	m.alerts = keepRecentAlerts(append(m.alerts, alert), maxRetainedAlerts)
 	alertsCopy := append([]model.Alert(nil), m.alerts...)
 	handler := m.alertHandler
 	m.mu.Unlock()
@@ -261,7 +328,10 @@ func (m *Monitor) maybeAlert(ctx context.Context, offer model.Offer) {
 	}
 	err := postWebhook(ctx, settings.WebhookURL, map[string]any{"type": "low_price", "alert": alert})
 	m.mu.Lock()
-	if index < len(m.alerts) && m.alerts[index].ID == alert.ID {
+	for index := range m.alerts {
+		if m.alerts[index].ID != alert.ID {
+			continue
+		}
 		if err != nil {
 			m.alerts[index].WebhookError = err.Error()
 		} else {
@@ -269,9 +339,17 @@ func (m *Monitor) maybeAlert(ctx context.Context, offer model.Offer) {
 			m.alerts[index].WebhookSentAt = time.Now()
 		}
 		alertsCopy = append([]model.Alert(nil), m.alerts...)
+		break
 	}
 	m.mu.Unlock()
 	_ = storage.SaveJSON(m.alertsPath, alertsCopy)
+}
+
+func normalizeAlertSource(source string) string {
+	if strings.EqualFold(strings.TrimSpace(source), "gpt-plus") {
+		return "gpt-plus"
+	}
+	return "k12"
 }
 
 func (m *Monitor) Start(ctx context.Context) {

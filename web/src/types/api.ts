@@ -97,6 +97,7 @@ export interface Subscription {
 
 export interface Alert {
   id?: Id
+  source?: 'k12' | 'gpt-plus' | string
   type?: string
   level?: string
   title?: string
@@ -131,6 +132,7 @@ export interface DashboardStats {
 
 export interface DashboardResponse {
   offers: Offer[]
+  gptPlusOffers?: Offer[]
   priceHistory?: PriceSample[]
   gptPlusPriceHistory?: PriceSample[]
   subscriptions: Subscription[]

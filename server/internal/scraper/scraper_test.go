@@ -5,6 +5,23 @@ import (
 	"testing"
 )
 
+func TestNewClientUsesFilteredK12FeedAndFiveOfferLimit(t *testing.T) {
+	client := NewClient()
+	if client.URL != "https://priceai.cc/products/chatgpt-team-business?tags=team_k12&collector=liandongShop&max=5" {
+		t.Fatalf("unexpected K12 feed URL: %s", client.URL)
+	}
+	if client.MaxOffers != 5 {
+		t.Fatalf("got max offers %d, want 5", client.MaxOffers)
+	}
+}
+
+func TestNewGPTPlusClientUsesUnverifiedAccountFeed(t *testing.T) {
+	client := NewGPTPlusClient()
+	if client.URL != "https://priceai.cc/products/chatgpt-plus?tags=account_unverified" {
+		t.Fatalf("unexpected GPT Plus feed URL: %s", client.URL)
+	}
+}
+
 func TestParseOffersFiltersSortsAndExtracts(t *testing.T) {
 	html := `<table><tbody>
 <tr><td>在售 库存 20</td><td>甲商家 链动小铺 / SHOP_1</td><td>普通 Team</td><td>¥0.10</td><td>2026-01-01</td><td></td><td><a href="/item/nope">购买</a></td></tr>

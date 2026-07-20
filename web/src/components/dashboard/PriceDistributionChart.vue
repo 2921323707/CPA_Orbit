@@ -1,24 +1,29 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { LineChart, Table2 } from 'lucide-vue-next'
+import { LineChart, Table2, Trash2 } from 'lucide-vue-next'
 import PaginationBar from '../common/PaginationBar.vue'
 import type { PriceSample } from '../../types/api'
-import { formatCurrency } from '../../utils/format'
+import { formatCurrency, getErrorMessage } from '../../utils/format'
+import { api } from '../../services/api'
+import { useToast } from '../../composables/useToast'
 
 const props = defineProps<{ k12History?: PriceSample[]; gptPlusHistory?: PriceSample[] }>()
-type Mode = 'k12' | 'gpt-plus' | 'both'
-type RangeMinutes = 30 | 120 | 1440 | 10080 | 20160
+const emit = defineEmits<{ historyDeleted: [] }>()
+type Mode = 'k12' | 'gpt-plus'
+type RangeMinutes = 120 | 1440 | 10080 | 20160
 interface RealPoint { at: Date; average: number }
 interface Series { id: 'k12' | 'gpt-plus'; label: string; points: RealPoint[] }
 
-const mode = ref<Mode>('both')
+const mode = ref<Mode>('k12')
 const rangeMinutes = ref<RangeMinutes>(120)
 const showTable = ref(false)
 const hovered = ref('')
 const tablePage = ref(1)
 const tablePageSize = 10
-const modes = [{ value: 'k12' as const, label: 'K12' }, { value: 'gpt-plus' as const, label: 'GPT Plus' }, { value: 'both' as const, label: '双线' }]
-const ranges = [{ value: 30 as const, label: '30m' }, { value: 120 as const, label: '2H' }, { value: 1440 as const, label: '24H' }, { value: 10080 as const, label: '7D' }, { value: 20160 as const, label: '14D' }]
+const deleting = ref('')
+const toast = useToast()
+const modes = [{ value: 'k12' as const, label: 'K12' }, { value: 'gpt-plus' as const, label: 'GPT Plus' }]
+const ranges = [{ value: 120 as const, label: '2H' }, { value: 1440 as const, label: '24H' }, { value: 10080 as const, label: '7D' }, { value: 20160 as const, label: '14D' }]
 const width = 760
 const height = 220
 const padding = { top: 18, right: 24, bottom: 38, left: 62 }
@@ -44,7 +49,7 @@ const allSeries = computed<Series[]>(() => [
   { id: 'k12', label: 'K12', points: normalize(props.k12History) },
   { id: 'gpt-plus', label: 'GPT Plus', points: normalize(props.gptPlusHistory) },
 ])
-const visibleSeries = computed(() => allSeries.value.filter((series) => mode.value === 'both' || series.id === mode.value).map((series) => ({
+const visibleSeries = computed(() => allSeries.value.filter((series) => series.id === mode.value).map((series) => ({
   ...series,
   points: series.points.filter((point) => point.at.getTime() >= startTime.value && point.at.getTime() <= endTime.value),
 })))
@@ -75,13 +80,28 @@ const formatAxisTime = (date: Date) => rangeMinutes.value <= 1440 ? date.toLocal
 const formatExactTime = (date: Date) => date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
 const seriesAverage = (series: Series) => series.points.length ? series.points.reduce((sum, point) => sum + point.average, 0) / series.points.length : null
 
+async function deleteSample(row: { source: string; sourceId: 'k12' | 'gpt-plus'; at: Date; average: number }) {
+  if (!window.confirm(`确认删除 ${row.source} ${formatExactTime(row.at)} 的报价记录 ${formatCurrency(row.average)}？`)) return
+  const key = `${row.sourceId}-${row.at.getTime()}`
+  deleting.value = key
+  try {
+    await api.deletePriceHistory(row.sourceId, row.at.toISOString())
+    toast.success('异常报价记录已删除，图表已重新计算')
+    emit('historyDeleted')
+  } catch (error) {
+    toast.error(getErrorMessage(error))
+  } finally {
+    deleting.value = ''
+  }
+}
+
 watch([mode, rangeMinutes], () => { tablePage.value = 1; hovered.value = '' })
 </script>
 
 <template>
   <section class="panel chart-panel" aria-labelledby="price-chart-title">
     <div class="panel__header panel__header--wrap">
-      <div><div class="chart-title-row"><LineChart :size="18" /><h2 id="price-chart-title">平均报价走势</h2></div><p>真实查询均价，可查看 K12、GPT Plus 或双线对照</p></div>
+      <div><div class="chart-title-row"><LineChart :size="18" /><h2 id="price-chart-title">平均报价走势</h2></div><p>真实查询均价，可切换查看 K12 或 GPT Plus</p></div>
       <div class="chart-controls chart-controls--stacked">
         <div class="segmented-control source-control" aria-label="报价来源">
           <button v-for="item in modes" :key="item.value" type="button" :class="{ 'is-active': mode === item.value }" @click="mode = item.value">{{ item.label }}</button>
@@ -89,7 +109,7 @@ watch([mode, rangeMinutes], () => { tablePage.value = 1; hovered.value = '' })
         <div class="segmented-control period-control" aria-label="查看周期">
           <button v-for="range in ranges" :key="range.value" type="button" :class="{ 'is-active': rangeMinutes === range.value }" @click="rangeMinutes = range.value">{{ range.label }}</button>
         </div>
-        <button class="button button--ghost button--small" type="button" :disabled="!allVisiblePoints.length" :aria-expanded="showTable" @click="showTable = !showTable"><Table2 :size="16" />{{ showTable ? '收起' : '数据' }}</button>
+        <button class="button button--ghost button--small" type="button" :disabled="!allVisiblePoints.length" :aria-expanded="showTable" @click="showTable = !showTable"><Table2 :size="16" />{{ showTable ? '收起数据详情' : '展开数据详情' }}</button>
       </div>
     </div>
 
@@ -99,7 +119,7 @@ watch([mode, rangeMinutes], () => { tablePage.value = 1; hovered.value = '' })
 
     <div v-if="allVisiblePoints.length" class="chart-wrap real-price-wrap">
       <svg class="price-chart" :viewBox="`0 0 ${width} ${height}`" role="img" aria-labelledby="price-chart-title price-chart-desc">
-        <desc id="price-chart-desc">所选周期内 K12 与 GPT Plus 的真实查询平均报价折线，不包含模拟值。</desc>
+        <desc id="price-chart-desc">所选周期内当前账号类型的真实查询平均报价折线，不包含模拟值。</desc>
         <g v-for="tick in yTicks" :key="tick.y"><line :x1="padding.left" :x2="width - padding.right" :y1="tick.y" :y2="tick.y" class="chart-grid" /><text :x="padding.left - 10" :y="tick.y + 4" text-anchor="end" class="chart-label">¥{{ tick.value.toFixed(2) }}</text></g>
         <g v-for="tick in xTicks" :key="tick.at.getTime()"><line :x1="tick.x" :x2="tick.x" :y1="padding.top" :y2="padding.top + plotHeight" class="chart-grid chart-grid--vertical" /><text :x="tick.x" :y="height - 16" text-anchor="middle" class="chart-label">{{ formatAxisTime(tick.at) }}</text></g>
         <g v-for="series in visibleSeries" :key="series.id">
@@ -116,7 +136,7 @@ watch([mode, rangeMinutes], () => { tablePage.value = 1; hovered.value = '' })
     <div v-else class="chart-empty"><LineChart :size="24" /><strong>这个周期还没有真实查询记录</strong><span>两个报价源都会在成功抓取后写入 14 天历史。</span></div>
 
     <div v-if="showTable && tableRows.length" class="chart-table">
-      <div class="table-wrap"><table><caption class="sr-only">真实平均报价记录</caption><thead><tr><th>来源</th><th>真实查询时间</th><th class="numeric">平均报价</th></tr></thead><tbody><tr v-for="row in pagedTableRows" :key="`${row.sourceId}-${row.at.getTime()}`"><td><span class="series-label" :class="`series-label--${row.sourceId}`"><i />{{ row.source }}</span></td><td>{{ formatExactTime(row.at) }}</td><td class="numeric strong">{{ formatCurrency(row.average) }}</td></tr></tbody></table></div>
+      <div class="table-wrap"><table><caption class="sr-only">真实平均报价记录</caption><thead><tr><th>来源</th><th>真实查询时间</th><th class="numeric">平均报价</th><th>操作</th></tr></thead><tbody><tr v-for="row in pagedTableRows" :key="`${row.sourceId}-${row.at.getTime()}`"><td><span class="series-label" :class="`series-label--${row.sourceId}`"><i />{{ row.source }}</span></td><td>{{ formatExactTime(row.at) }}</td><td class="numeric strong">{{ formatCurrency(row.average) }}</td><td><button class="button button--danger button--small" type="button" :disabled="deleting === `${row.sourceId}-${row.at.getTime()}`" @click="deleteSample(row)"><Trash2 :size="14" />{{ deleting === `${row.sourceId}-${row.at.getTime()}` ? '删除中' : '删除' }}</button></td></tr></tbody></table></div>
       <PaginationBar :page="tablePage" :total-pages="tableTotalPages" :total="tableRows.length" :page-size="tablePageSize" @change="tablePage = $event" />
     </div>
   </section>

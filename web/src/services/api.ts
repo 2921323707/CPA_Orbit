@@ -72,6 +72,10 @@ export const api = {
   refreshOffers: () => request<ApiMessage>('/offers/refresh', { method: 'POST' }),
   getGptPlus: () => request<OfferFeed>('/gpt-plus'),
   refreshGptPlus: () => request<OfferFeed>('/gpt-plus/refresh', { method: 'POST' }),
+  deletePriceHistory: (source: 'k12' | 'gpt-plus', at: string) => {
+    const params = new URLSearchParams({ source, at })
+    return request<ApiMessage>(`/price-history?${params.toString()}`, { method: 'DELETE' })
+  },
   getLubanBalance: () => request<LubanBalance>('/luban/balance'),
   saveLubanKey: (apiKey: string) => request<LubanBalance>('/luban/key', { method: 'PUT', body: JSON.stringify({ apiKey }) }),
   getLubanCountries: () => request<{ countries: LubanCountry[] }>('/luban/countries'),

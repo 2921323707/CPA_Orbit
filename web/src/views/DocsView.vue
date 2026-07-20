@@ -25,8 +25,8 @@ const changelogLanguage = ref<'zh' | 'en'>('zh')
 const sections = [
   { id: 'quick-start', label: '快速开始' },
   { id: 'architecture', label: '系统组成' },
-  { id: 'offers', label: 'K12 报价' },
-  { id: 'gpt-plus', label: 'GPT Plus 报价' },
+  { id: 'offers', label: 'Price 报价' },
+  { id: 'gpt-plus', label: '工具箱' },
   { id: 'subscriptions', label: '订阅与 CPA' },
   { id: 'alerts', label: '提醒方式' },
   { id: 'security', label: '安全边界' },
@@ -48,7 +48,7 @@ const sections = [
       <section class="docs-hero panel">
         <div class="docs-hero__icon"><BookOpenText :size="28" /></div>
         <div>
-          <p class="docs-eyebrow">CPA ORBIT · v1.1.0</p>
+          <p class="docs-eyebrow">CPA ORBIT · v1.2.0</p>
           <h1>CPA Orbit 控制台说明</h1>
           <p>从低价发现、支付跳转、CPA JSON 归档，到 CLIProxyAPI 热加载和连通性检查的完整操作手册。</p>
         </div>
@@ -60,7 +60,7 @@ const sections = [
 
       <section id="changelog" class="panel docs-section docs-changelog">
         <div class="docs-section__heading docs-section__heading--split">
-          <div class="docs-section__heading-main"><History :size="21" /><div><h2>{{ changelogLanguage === 'zh' ? 'v1.1.0 更新日志' : 'v1.1.0 Release Notes' }}</h2><p>{{ changelogLanguage === 'zh' ? '2026-07-19 · 桌面集成、可靠性与体验升级。' : '2026-07-19 · Desktop integration, reliability, and experience improvements.' }}</p></div></div>
+          <div class="docs-section__heading-main"><History :size="21" /><div><h2>{{ changelogLanguage === 'zh' ? 'v1.2.0 更新日志' : 'v1.2.0 Release Notes' }}</h2><p>{{ changelogLanguage === 'zh' ? '2026-07-20 · 双报价、历史清理与工作区重组。' : '2026-07-20 · Dual pricing, history cleanup, and workspace reorganization.' }}</p></div></div>
           <div class="docs-language-switch" role="group" aria-label="Changelog language">
             <Languages :size="14" />
             <button type="button" :class="{ 'is-active': changelogLanguage === 'zh' }" @click="changelogLanguage = 'zh'">中文</button>
@@ -69,20 +69,20 @@ const sections = [
         </div>
 
         <div v-if="changelogLanguage === 'zh'" class="release-notes">
-          <article><span>01</span><div><strong>订阅成为唯一事实源</strong><p>清理旧活动池文件分叉，归档与 CPA 运行目录建立可重建投影；顶部在线数量与当前运行文件保持一致。</p></div></article>
-          <article><span>02</span><div><strong>导入与额度检查重构</strong><p>支持批量 JSON、完整内容指纹去重、单文件入手价格、非必填提醒，以及进入订阅页自动刷新当前页额度。</p></div></article>
-          <article><span>03</span><div><strong>双报价监控</strong><p>K12 与 GPT Plus 同周期真实抓取，保存最近 14 天平均价格历史；总览支持短周期、长周期和双线对照。</p></div></article>
-          <article><span>04</span><div><strong>鲁班接码完整流程</strong><p>密钥仅保存在后端，支持余额、国家、服务单价、获取号码、3 秒验证码轮询及释放号码。</p></div></article>
-          <article><span>05</span><div><strong>控制台体验升级</strong><p>所有完整数据表统一每页 10 条；加入深色模式、隐藏页面滚动条、轨道式艺术加载、响应式布局与全局项目标志。</p></div></article>
-          <article><span>06</span><div><strong>开源发布基础</strong><p>版本统一为 v1.1.0，并补齐桌面构建、自动化测试、GitHub 社区入口、安全和贡献规范。</p></div></article>
+          <article><span>01</span><div><strong>Price 双报价工作区</strong><p>K12 与 GPT Plus 未接码报价统一展示，使用真实筛选源、五条分页与居中紧凑表格。</p></div></article>
+          <article><span>02</span><div><strong>历史异常清理</strong><p>展开真实历史记录后可手动删除单个异常样本，并立即重新绘制报价走势。</p></div></article>
+          <article><span>03</span><div><strong>总览聚焦最低报价</strong><p>分别展示 K12 和 GPT Plus 最低三条报价，平均报价图切换为单一选中系列。</p></div></article>
+          <article><span>04</span><div><strong>工具箱重组</strong><p>原 GPT Plus 页面改为工具箱，集中提供订阅 JSON 转换台和鲁班接码完整流程。</p></div></article>
+          <article><span>05</span><div><strong>提醒并入设置</strong><p>提醒中心成为 Settings 独立子页面，支持双报价来源，历史最多十条且每页五条。</p></div></article>
+          <article><span>06</span><div><strong>删除精度修复</strong><p>兼容浏览器毫秒与后端纳秒时间差异，确保指定历史价格能够可靠删除。</p></div></article>
         </div>
         <div v-else class="release-notes">
-          <article><span>01</span><div><strong>Subscriptions as the source of truth</strong><p>Removed the split active-pool model and made the CPA runtime directory a rebuildable projection of archived subscriptions.</p></div></article>
-          <article><span>02</span><div><strong>Import and quota workflow</strong><p>Added batch JSON import, full-content identity, optional acquisition price, non-blocking optional-field prompts, and automatic page quota checks.</p></div></article>
-          <article><span>03</span><div><strong>Dual offer monitoring</strong><p>K12 and GPT Plus now share a real refresh schedule, retain 14 days of average-price history, and support short, long, or dual-series comparison.</p></div></article>
-          <article><span>04</span><div><strong>Complete Luban SMS flow</strong><p>Backend-only API key storage, balance and catalog lookup, number acquisition, three-second verification-code polling, and explicit release.</p></div></article>
-          <article><span>05</span><div><strong>Console experience</strong><p>Ten-row pagination, dark mode, hidden viewport scrollbar, orbital loading motion, responsive layouts, and a unified project mark.</p></div></article>
-          <article><span>06</span><div><strong>Release foundation</strong><p>Standardized v1.1.0 and completed desktop builds, automated tests, GitHub community entry points, security, and contribution policies.</p></div></article>
+          <article><span>01</span><div><strong>Dual Price workspace</strong><p>Unified filtered K12 and unverified GPT Plus offers with centered compact tables and five-row pagination.</p></div></article>
+          <article><span>02</span><div><strong>Historical cleanup</strong><p>Individual anomalous samples can be deleted from expanded history with immediate chart re-rendering.</p></div></article>
+          <article><span>03</span><div><strong>Focused Overview</strong><p>Shows the three lowest offers per source and uses a single selected average-price series.</p></div></article>
+          <article><span>04</span><div><strong>Operations Toolbox</strong><p>Replaced the legacy GPT Plus page with JSON conversion and the complete Luban SMS workflow.</p></div></article>
+          <article><span>05</span><div><strong>Alerts in Settings</strong><p>Alerts are an independent Settings page with dual-source records, ten-entry retention, and five-row pagination.</p></div></article>
+          <article><span>06</span><div><strong>Reliable deletion</strong><p>Browser millisecond timestamps now match persisted Go timestamps that may contain nanoseconds.</p></div></article>
         </div>
       </section>
 
@@ -121,8 +121,8 @@ const sections = [
       </section>
 
       <section id="offers" class="panel docs-section">
-        <div class="docs-section__heading"><ShoppingCart :size="21" /><div><h2>K12 报价与购买跳转</h2><p>控制台只聚合和跳转，不参与收款。</p></div></div>
-        <div class="docs-callout docs-callout--info"><CheckCircle2 :size="18" /><p>系统从 PriceAI 的 ChatGPT Team / Business 页面筛选 K12、CPA、JSON 和反代相关商品，按价格升序保留前 10 条；K12 和 GPT Plus 使用同一刷新周期。</p></div>
+        <div class="docs-section__heading"><ShoppingCart :size="21" /><div><h2>Price 报价与购买跳转</h2><p>统一展示 K12 与 GPT Plus 未接码报价；控制台只聚合和跳转，不参与收款。</p></div></div>
+        <div class="docs-callout docs-callout--info"><CheckCircle2 :size="18" /><p>系统从 PriceAI 的 ChatGPT Team / Business 页面筛选链动小铺 K12 商品并保留最低 5 条，同时展示 ChatGPT Plus 未接码账号；两个报价源使用同一刷新周期。</p></div>
         <ul class="docs-list">
           <li>“刷新报价”会立即重新抓取，后台也会按设置周期自动刷新。</li>
           <li>链动小铺 ID 与商品 itemId 是两个不同字段；详情抽屉会同时展示。</li>
@@ -132,13 +132,13 @@ const sections = [
       </section>
 
       <section id="gpt-plus" class="panel docs-section">
-        <div class="docs-section__heading"><ShoppingCart :size="21" /><div><h2>GPT Plus 报价</h2><p>独立展示 PriceAI 的 ChatGPT Plus 日抛 / 成品号报价。</p></div></div>
+        <div class="docs-section__heading"><ShoppingCart :size="21" /><div><h2>工具箱与接码</h2><p>GPT Plus 报价统一显示在 Price 页面；工具箱集中放置 JSON 转换台与鲁班接码。</p></div></div>
         <ul class="docs-list">
-          <li>来源页面为 <code>https://priceai.cc/products/chatgpt-plus</code>，与 K12 共用后台刷新周期。</li>
-          <li>打开 GPT Plus 页面会展示最近一次成功快照；抓取失败时保留旧数据并显示错误原因。</li>
-          <li>页面展示当前快照中价格最低的 30 条，原始商品和购买链接仍以 PriceAI 页面为准。</li>
+          <li>GPT Plus 来源页面为 <code>https://priceai.cc/products/chatgpt-plus?tags=account_unverified</code>，只采集未接码账号，并与 K12 共用后台刷新周期。</li>
+          <li>Price 页面按价格升序展示当前未接码账号快照；抓取失败时保留旧数据并显示错误原因。</li>
           <li>“刷新报价”会同时刷新 K12 和 GPT Plus 两个报价源。</li>
-          <li>报价表固定每页 10 条；总览的平均报价走势可切换 K12、GPT Plus 或双线对照，并按真实查询时间保留最近 14 天记录。</li>
+          <li>报价表固定每页 5 条；总览的平均报价走势可在 K12 与 GPT Plus 之间切换，并按真实查询时间保留最近 14 天记录。</li>
+          <li>订阅 JSON 转换台已从 Subscriptions 移入工具箱，转换完成后再回到订阅文件页导入。</li>
           <li>“鲁班接码”可保存 API 密钥；进入页面时会自动查询余额，并加载国家、服务和单次价格。密钥只保存在后端，本页只显示配置状态和余额。</li>
           <li>选择国家与服务后，点击“获取号码”才会创建真实接码订单；号码需要手动填写到目标平台并发送验证码，控制台每 3 秒检查一次短信，收到后可复制验证码或释放号码。</li>
         </ul>
@@ -166,9 +166,9 @@ const sections = [
       </section>
 
       <section id="alerts" class="panel docs-section">
-        <div class="docs-section__heading"><BellRing :size="21" /><div><h2>提醒方式</h2><p>后端持久提醒与浏览器本地偏好相互独立。</p></div></div>
+        <div class="docs-section__heading"><BellRing :size="21" /><div><h2>提醒方式</h2><p>提醒中心已集成到 Settings 子导航；后端历史与浏览器本地偏好相互独立。</p></div></div>
         <div class="docs-feature-grid">
-          <article><strong>界面提醒</strong><p>低价横幅、状态标签、Toast 和历史提醒。</p></article>
+          <article><strong>界面提醒</strong><p>低价横幅、状态标签、Toast 和历史提醒；历史最多保留 10 条，每页显示 5 条。</p></article>
           <article><strong>浏览器通知</strong><p>需要浏览器授权；页面打开时可以显示系统通知。</p></article>
           <article><strong>提示声音</strong><p>通过浏览器 Web Audio 播放短音，不上传任何数据。</p></article>
           <article><strong>Webhook</strong><p>由 Go 后端向设置的 URL 发送 JSON，适合企业微信、钉钉或自建服务。</p></article>
@@ -198,7 +198,7 @@ const sections = [
       </section>
 
       <footer class="docs-footer">
-        <KeyRound :size="16" />CPA Orbit v1.1.0 · 本文档不会展示任何密钥；敏感配置请只在设置页填写。
+        <KeyRound :size="16" />CPA Orbit v1.2.0 · 本文档不会展示任何密钥；敏感配置请只在设置页填写。
       </footer>
     </article>
   </div>

@@ -18,7 +18,7 @@ import (
 )
 
 const maxUploadBytes = 2 << 20
-const appVersion = "1.1.0"
+const appVersion = "1.2.0"
 
 type Server struct {
 	settings       *config.Store
@@ -84,6 +84,30 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, s.monitor.GPTPlusOffers())
+	case path == "/api/price-history":
+		if !requireMethod(w, r, http.MethodDelete) {
+			return
+		}
+		source := r.URL.Query().Get("source")
+		at, err := time.Parse(time.RFC3339Nano, r.URL.Query().Get("at"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_history_time", "at must be an RFC3339 timestamp")
+			return
+		}
+		deleted, err := s.monitor.DeletePriceSample(source, at)
+		if errors.Is(err, ErrInvalidPriceHistorySource) {
+			writeError(w, http.StatusBadRequest, "invalid_history_source", err.Error())
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "history_delete_failed", err.Error())
+			return
+		}
+		if !deleted {
+			writeError(w, http.StatusNotFound, "history_sample_not_found", "price history sample was not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	case path == "/api/luban/balance":
 		if !requireMethod(w, r, http.MethodGet) {
 			return
@@ -621,6 +645,7 @@ func (s *Server) handleCPAStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDashboard(w http.ResponseWriter) {
 	offers := s.monitor.Offers()
+	gptPlus := s.monitor.GPTPlusOffers()
 	alerts := s.monitor.Alerts()
 	items := s.subs.List("", "", "")
 	connected, expired, unchecked, actionRequired := 0, 0, 0, 0
@@ -645,13 +670,17 @@ func (s *Server) handleDashboard(w http.ResponseWriter) {
 		value := offers.Offers[0].Price
 		lowestPrice = &value
 	}
+	if len(gptPlus.Offers) > 0 && (lowestPrice == nil || gptPlus.Offers[0].Price < *lowestPrice) {
+		value := gptPlus.Offers[0].Price
+		lowestPrice = &value
+	}
 	stats := map[string]any{
 		"totalSubscriptions": len(items), "connected": connected, "expired": expired,
 		"unchecked": unchecked, "actionRequired": actionRequired, "lowestPrice": lowestPrice,
 		"offersUpdatedAt": offers.UpdatedAt, "threshold": s.settings.Get().Threshold,
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"offers": offers.Offers, "priceHistory": s.monitor.PriceHistory(), "gptPlusPriceHistory": s.monitor.GPTPlusPriceHistory(), "subscriptions": items, "alerts": alerts, "stats": stats,
+		"offers": offers.Offers, "gptPlusOffers": gptPlus.Offers, "priceHistory": s.monitor.PriceHistory(), "gptPlusPriceHistory": s.monitor.GPTPlusPriceHistory(), "subscriptions": items, "alerts": alerts, "stats": stats,
 	})
 }
 

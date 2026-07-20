@@ -106,7 +106,11 @@ func (a *App) handleAlert(alert application.Alert) {
 	if ctx == nil {
 		return
 	}
-	body := fmt.Sprintf("%s 当前 ¥%.2f，阈值 ¥%.2f", alert.Title, alert.Price, alert.Threshold)
+	source := "K12"
+	if alert.Source == "gpt-plus" {
+		source = "GPT Plus"
+	}
+	body := fmt.Sprintf("[%s] %s 当前 ¥%.2f，阈值 ¥%.2f", source, alert.Title, alert.Price, alert.Threshold)
 	if settings.FlashOnAlert {
 		flashWindow("CPA Orbit")
 	}

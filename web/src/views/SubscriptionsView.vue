@@ -289,12 +289,7 @@ onMounted(load)
           <small class="import-field-hint">仅单个导入时记录；批量导入请逐个补录。</small>
         </div>
       </div>
-      <div class="import-tools" aria-label="订阅辅助工具">
-        <a class="import-tool" href="https://cvt.okcode.cc.cd/" target="_blank" rel="noopener noreferrer">
-          <span class="import-tool__icon"><FileJson2 :size="19" /></span>
-          <span class="import-tool__copy"><strong>JSON 转换台</strong><small>转换、整理后再导入 CPA 订阅</small></span>
-          <ExternalLink :size="15" aria-hidden="true" />
-        </a>
+      <div class="import-tools import-tools--single" aria-label="订阅辅助工具">
         <a class="import-tool import-tool--cdk" href="https://www.kezongai.top/" target="_blank" rel="noopener noreferrer">
           <span class="import-tool__icon"><KeyRound :size="19" /></span>
           <span class="import-tool__copy"><strong>CDK 兑换入口</strong><small>打开兑换平台处理兑换码</small></span>

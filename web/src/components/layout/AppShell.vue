@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import {
-  Bell,
   BookOpenText,
-  Bot,
   FileJson2,
   Gauge,
   Github,
@@ -14,6 +12,7 @@ import {
   Settings,
   ShoppingCart,
   Sun,
+  Wrench,
   X,
 } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -81,8 +80,7 @@ const navigation = computed(() => [
   { to: '/', label: t('nav.dashboard'), icon: Gauge },
   { to: '/offers', label: t('nav.offers'), icon: ShoppingCart },
   { to: '/subscriptions', label: t('nav.subscriptions'), icon: FileJson2 },
-  { to: '/alerts', label: t('nav.alerts'), icon: Bell },
-  { to: '/gpt-plus', label: t('nav.gptPlus'), icon: Bot },
+  { to: '/toolbox', label: t('nav.toolbox'), icon: Wrench },
   { to: '/settings', label: t('nav.settings'), icon: Settings },
   { to: '/docs', label: t('nav.docs'), icon: BookOpenText },
 ])

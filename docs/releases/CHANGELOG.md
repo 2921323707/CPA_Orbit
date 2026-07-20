@@ -4,6 +4,29 @@ All notable CPA Orbit changes are documented here. Versions follow Semantic Vers
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-20
+
+### Added
+
+- Added K12 and unverified GPT Plus offer tables to one Price workspace, each using compact five-row pagination.
+- Added manual deletion of individual historical price samples with immediate dashboard re-visualization.
+- Added a Toolbox that combines the subscription JSON converter and the Luban SMS workflow.
+- Added GPT Plus low-price alert support alongside K12 alerts.
+
+### Changed
+
+- Switched K12 collection to the PriceAI Team/Business `team_k12` and `liandongShop` filtered source, limited to five offers.
+- Switched GPT Plus collection to the PriceAI `account_unverified` source.
+- Moved Alerts into independent Settings subpages and limited retained alert history to the latest ten entries, five per page.
+- Reworked the Overview offer list to show the three lowest K12 and GPT Plus offers separately.
+- Simplified the average-price chart to one selected series and removed the 30-minute range.
+- Centered and compacted Price table columns without horizontal scrolling.
+
+### Fixed
+
+- Fixed historical sample deletion failing when browser millisecond timestamps were compared with Go nanosecond timestamps.
+- Prevented legacy, unrelated K12 history outliers from becoming permanent by allowing selected records to be removed safely.
+
 ## [1.1.0] - 2026-07-19
 
 ### Documentation

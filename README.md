@@ -7,15 +7,15 @@
     <a href="http://165.154.205.54/cpa_orbit/">
       <img src="https://img.shields.io/badge/Documentation-Open_online_docs-0B6159?style=for-the-badge&amp;logo=readthedocs&amp;logoColor=white" alt="Open CPA Orbit online documentation" />
     </a>
-    <a href="https://github.com/2921323707/CPA_Orbit/releases/tag/v1.1.0">
-      <img src="https://img.shields.io/badge/Windows-Download_v1.1.0-2563EB?style=for-the-badge&amp;logo=windows11&amp;logoColor=white" alt="Download CPA Orbit v1.1.0 for Windows" />
+    <a href="https://github.com/2921323707/CPA_Orbit/releases/tag/v1.2.0">
+      <img src="https://img.shields.io/badge/Windows-Download_v1.2.0-2563EB?style=for-the-badge&amp;logo=windows11&amp;logoColor=white" alt="Download CPA Orbit v1.2.0 for Windows" />
     </a>
   </p>
   <p><sub>English · 简体中文 · Searchable guides · Architecture · Deployment · Release notes</sub></p>
 
   <p>
     <a href="https://github.com/2921323707/CPA_Orbit/actions"><img src="https://img.shields.io/badge/CI-configured-2088FF?style=flat-square&amp;logo=githubactions&amp;logoColor=white" alt="CI configured" /></a>
-    <a href="https://github.com/2921323707/CPA_Orbit/releases"><img src="https://img.shields.io/badge/version-v1.1.0-2563EB?style=flat-square" alt="Version 1.1.0" /></a>
+    <a href="https://github.com/2921323707/CPA_Orbit/releases"><img src="https://img.shields.io/badge/version-v1.2.0-2563EB?style=flat-square" alt="Version 1.2.0" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22C55E?style=flat-square" alt="MIT License" /></a>
     <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?style=flat-square&amp;logo=go&amp;logoColor=white" alt="Go 1.25 or newer" /></a>
     <a href="https://vuejs.org/"><img src="https://img.shields.io/badge/Vue-3.5-42B883?style=flat-square&amp;logo=vuedotjs&amp;logoColor=white" alt="Vue 3.5" /></a>
@@ -101,6 +101,10 @@ The archive under `k12/` is the subscription source of truth. `cpa/auths/` is a 
 
 ## Recent updates
 
+- Unified K12 and unverified GPT Plus offers in a compact Price workspace with five-row pagination and direct checkout links.
+- Added deletable price-history samples with immediate chart re-rendering, single-source trend views, and corrected K12 collection filters.
+- Replaced the legacy GPT Plus screen with a Toolbox for subscription JSON conversion and Luban SMS operations.
+- Integrated Alerts into independent Settings subpages and capped history at ten records with five-row pagination.
 - Unified desktop and browser data, settings, secrets, subscription state, and backend health reporting.
 - Added one-click desktop startup for the Monitor API and CLIProxyAPI, plus tray, notifications, taskbar flashing, and startup-at-login controls.
 - Added Auto/Light/Dark appearance modes and a stable fixed-size desktop window without resize polling.

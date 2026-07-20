@@ -1,5 +1,5 @@
 export const PROJECT_NAME = 'CPA Orbit'
-export const PROJECT_VERSION = '1.1.0'
+export const PROJECT_VERSION = '1.2.0'
 
 // Set this when the public repository is ready. The topbar automatically turns
 // the reserved GitHub mark into a link as soon as this value is non-empty.

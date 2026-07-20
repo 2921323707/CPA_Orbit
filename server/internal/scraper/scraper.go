@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	DefaultURL = "https://priceai.cc/products/chatgpt-team-business"
-	GPTPlusURL = "https://priceai.cc/products/chatgpt-plus"
+	DefaultURL = "https://priceai.cc/products/chatgpt-team-business?tags=team_k12&collector=liandongShop&max=5"
+	GPTPlusURL = "https://priceai.cc/products/chatgpt-plus?tags=account_unverified"
 )
 
 var (
@@ -37,7 +37,7 @@ type Client struct {
 }
 
 func NewClient() *Client {
-	return NewClientForURLWithLimit(DefaultURL, relevantRE, 10)
+	return NewClientForURLWithLimit(DefaultURL, relevantRE, 5)
 }
 
 func NewGPTPlusClient() *Client {

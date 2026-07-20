@@ -20,7 +20,7 @@ const alerts = ref<Alert[]>([])
 const loading = ref(true)
 const error = ref('')
 const page = ref(1)
-const pageSize = 10
+const pageSize = 5
 const preferences = ref<AlertPreferences>({ ...defaults })
 const notificationPermission = ref<NotificationPermission | 'unsupported'>('Notification' in window ? Notification.permission : 'unsupported')
 const toast = useToast()
@@ -105,6 +105,10 @@ function alertLabel(alert: Alert) {
   return String(alert.level ?? alert.type ?? '提醒')
 }
 
+function alertSource(alert: Alert) {
+  return String(alert.source ?? 'k12').toLowerCase() === 'gpt-plus' ? 'GPT Plus' : 'K12'
+}
+
 onMounted(() => { loadPreferences(); load() })
 </script>
 
@@ -140,8 +144,8 @@ onMounted(() => { loadPreferences(); load() })
       <ErrorState v-else-if="error" :message="error" @retry="load" />
       <div v-else-if="alerts.length" class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>时间</th><th>级别</th><th>商家</th><th>内容</th><th class="numeric">价格 / 阈值</th><th>操作</th></tr></thead>
-          <tbody><tr v-for="(item, index) in pagedAlerts" :key="String(item.id ?? index)"><td class="nowrap">{{ formatDateTime(alertCreatedAt(item)) }}</td><td><StatusBadge :tone="alertTone(item)" :label="alertLabel(item)" /></td><td class="strong">{{ item.merchant || '—' }}</td><td>{{ item.message || item.title || '监控提醒' }}</td><td class="numeric nowrap">{{ item.price == null ? '—' : formatCurrency(item.price) }}<span v-if="item.threshold != null" class="muted"> / {{ formatCurrency(item.threshold) }}</span></td><td><a v-if="item.orderUrl" class="text-link" :href="item.orderUrl" target="_blank" rel="noopener">直达支付 <ExternalLink :size="13" /></a><span v-else>{{ item.read ? '已读' : '未读' }}</span></td></tr></tbody>
+          <thead><tr><th>时间</th><th>账号</th><th>级别</th><th>商家</th><th>内容</th><th class="numeric">价格 / 阈值</th><th>操作</th></tr></thead>
+          <tbody><tr v-for="(item, index) in pagedAlerts" :key="String(item.id ?? index)"><td class="nowrap">{{ formatDateTime(alertCreatedAt(item)) }}</td><td><StatusBadge tone="neutral" :label="alertSource(item)" /></td><td><StatusBadge :tone="alertTone(item)" :label="alertLabel(item)" /></td><td class="strong">{{ item.merchant || '—' }}</td><td>{{ item.message || item.title || '监控提醒' }}</td><td class="numeric nowrap">{{ item.price == null ? '—' : formatCurrency(item.price) }}<span v-if="item.threshold != null" class="muted"> / {{ formatCurrency(item.threshold) }}</span></td><td><a v-if="item.orderUrl" class="text-link" :href="item.orderUrl" target="_blank" rel="noopener">直达支付 <ExternalLink :size="13" /></a><span v-else>{{ item.read ? '已读' : '未读' }}</span></td></tr></tbody>
         </table>
       </div>
       <PaginationBar v-if="alerts.length" :page="page" :total-pages="totalPages" :total="alerts.length" :page-size="pageSize" @change="page = $event" />

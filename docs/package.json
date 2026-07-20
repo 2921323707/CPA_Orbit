@@ -1,7 +1,7 @@
 {
   "name": "cpa-orbit-docs",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "dev": "vitepress dev --host 127.0.0.1",

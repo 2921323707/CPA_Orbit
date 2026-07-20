@@ -1,20 +1,11 @@
 <script setup lang="ts">
-import { Check, Copy, ExternalLink, Globe2, KeyRound, Phone, RefreshCw, RotateCw, ShoppingBag, WalletCards, XCircle } from 'lucide-vue-next'
+import { Check, Copy, ExternalLink, FileJson2, Globe2, KeyRound, Phone, RefreshCw, RotateCw, WalletCards, XCircle } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import EmptyState from '../components/common/EmptyState.vue'
-import ErrorState from '../components/common/ErrorState.vue'
-import LoadingState from '../components/common/LoadingState.vue'
-import PaginationBar from '../components/common/PaginationBar.vue'
 import { useToast } from '../composables/useToast'
 import { api } from '../services/api'
-import type { LubanBalance, LubanCountry, LubanNumberSession, LubanService, LubanSmsStatus, Offer, OfferFeed } from '../types/api'
-import { formatCurrency, formatDateTime, formatNumber, getErrorMessage, truncate } from '../utils/format'
-import { offerInventory, offerMerchant, offerOrderUrl, offerUpdatedAt } from '../utils/models'
+import type { LubanBalance, LubanCountry, LubanNumberSession, LubanService, LubanSmsStatus } from '../types/api'
+import { formatDateTime, getErrorMessage } from '../utils/format'
 
-const feed = ref<OfferFeed | null>(null)
-const loading = ref(true)
-const refreshing = ref(false)
-const error = ref('')
 const luban = ref<LubanBalance | null>(null)
 const lubanError = ref('')
 const lubanKey = ref('')
@@ -30,32 +21,11 @@ const numberLoading = ref(false)
 const numberSession = ref<LubanNumberSession | null>(null)
 const smsStatus = ref<LubanSmsStatus | null>(null)
 const pollingError = ref('')
-let smsTimer: number | undefined
-const page = ref(1)
-const pageSize = 10
 const toast = useToast()
-const offers = computed(() => [...(feed.value?.offers ?? [])].sort((a, b) => Number(a.price) - Number(b.price)))
-const totalPages = computed(() => Math.max(1, Math.ceil(offers.value.length / pageSize)))
-const pagedOffers = computed(() => offers.value.slice((page.value - 1) * pageSize, page.value * pageSize))
-const lowestPrice = computed(() => offers.value.length ? Number(offers.value[0].price) : null)
-const inStock = computed(() => offers.value.filter((offer) => !/售罄|缺货|下架|sold\s*out/i.test(String(offer.stock ?? ''))).length)
+let smsTimer: number | undefined
+
 const selectedCountry = computed(() => countries.value.find((country) => country.code === selectedCountryCode.value))
 const sortedServices = computed(() => [...services.value].sort((a, b) => Number(a.cost ?? 0) - Number(b.cost ?? 0)))
-
-async function load() {
-  loading.value = true
-  error.value = ''
-  try {
-    const [offerFeed] = await Promise.all([api.getGptPlus(), loadLubanBalance()])
-    feed.value = offerFeed
-    page.value = Math.min(page.value, Math.max(1, Math.ceil((offerFeed.offers?.length ?? 0) / pageSize)))
-    if (luban.value?.configured) await loadLubanCatalog()
-  } catch (err) {
-    error.value = getErrorMessage(err)
-  } finally {
-    loading.value = false
-  }
-}
 
 async function loadLubanBalance() {
   lubanError.value = ''
@@ -165,6 +135,7 @@ async function saveLubanKey() {
     lubanKey.value = ''
     toast.success('鲁班接码密钥已安全保存')
     await loadLubanBalance()
+    if (luban.value?.configured) await loadLubanCatalog()
   } catch (err) {
     toast.error(getErrorMessage(err))
   } finally {
@@ -172,38 +143,29 @@ async function saveLubanKey() {
   }
 }
 
-async function refresh() {
-  refreshing.value = true
-  try {
-    feed.value = await api.refreshGptPlus()
-    page.value = 1
-    toast.success('GPT Plus 报价已刷新')
-  } catch (err) {
-    toast.error(getErrorMessage(err))
-  } finally {
-    refreshing.value = false
-  }
-}
-
-function offerKey(offer: Offer, index: number) {
-  return String(offer.itemId ?? offer.id ?? `${offer.title}-${index}`)
-}
-
-onMounted(load)
+onMounted(async () => {
+  await loadLubanBalance()
+  if (luban.value?.configured) await loadLubanCatalog()
+})
 onBeforeUnmount(clearSmsTimer)
 </script>
 
 <template>
   <div class="page-stack">
     <div class="page-toolbar">
-      <div>
-        <p class="page-description">采集 PriceAI 的 ChatGPT Plus 日抛 / 成品号报价；与 K12 使用同一刷新周期。</p>
-        <p v-if="feed?.updatedAt" class="page-meta">最近采集：{{ formatDateTime(feed.updatedAt) }} · {{ formatNumber(offers.length) }} 条</p>
-      </div>
-      <button class="button button--primary" type="button" :disabled="refreshing" @click="refresh"><RefreshCw :size="17" :class="{ spinning: refreshing }" />{{ refreshing ? '刷新中…' : '刷新报价' }}</button>
+      <div><p class="page-description">集中放置订阅 JSON 转换与鲁班接码工具。</p></div>
     </div>
 
-    <div v-if="feed?.lastError" class="inline-alert inline-alert--warning"><ShoppingBag :size="18" /><span>本次 GPT Plus 抓取失败，当前展示上一次成功快照：{{ feed.lastError }}</span></div>
+    <section class="panel">
+      <div class="panel__header"><div><h2>订阅 JSON 工具</h2><p>转换、整理账号 JSON 后，可回到订阅文件页面继续导入。</p></div></div>
+      <div class="import-tools toolbox-tools" aria-label="订阅 JSON 工具">
+        <a class="import-tool" href="https://cvt.okcode.cc.cd/" target="_blank" rel="noopener noreferrer">
+          <span class="import-tool__icon"><FileJson2 :size="19" /></span>
+          <span class="import-tool__copy"><strong>JSON 转换台</strong><small>打开转换台整理 CPA 订阅 JSON</small></span>
+          <ExternalLink :size="15" aria-hidden="true" />
+        </a>
+      </div>
+    </section>
 
     <section class="panel luban-panel">
       <div class="panel__header panel__header--wrap">
@@ -251,11 +213,7 @@ onBeforeUnmount(clearSmsTimer)
           <div class="luban-session__heading"><span class="luban-session__icon"><Phone :size="19" /></span><div><strong>当前号码</strong><small>{{ numberSession ? '请在目标平台填写此号码' : '选择服务后获取号码' }}</small></div></div>
           <div v-if="numberSession" class="luban-session__number"><strong>{{ numberSession.number }}</strong><button class="icon-button" type="button" aria-label="复制号码" title="复制号码" @click="copyText(numberSession.number, '号码已复制')"><Copy :size="16" /></button></div>
           <div v-else class="luban-session__placeholder">— — — — —</div>
-          <div v-if="numberSession" class="luban-session__status" :class="smsStatus?.status === 'received' ? 'is-received' : ''">
-            <span class="luban-session__status-dot" />
-            <span v-if="smsStatus?.status === 'received'">验证码：<strong>{{ smsStatus.code }}</strong></span>
-            <span v-else>等待目标平台发送验证码…</span>
-          </div>
+          <div v-if="numberSession" class="luban-session__status" :class="smsStatus?.status === 'received' ? 'is-received' : ''"><span class="luban-session__status-dot" /><span v-if="smsStatus?.status === 'received'">验证码：<strong>{{ smsStatus.code }}</strong></span><span v-else>等待目标平台发送验证码…</span></div>
           <p v-if="pollingError" class="luban-session__error">{{ pollingError }}</p>
           <div class="luban-session__actions">
             <button v-if="!numberSession" class="button button--primary" type="button" :disabled="numberLoading || !selectedServiceId" @click="requestLubanNumber"><Phone :size="15" />{{ numberLoading ? '获取中…' : '获取号码' }}</button>
@@ -266,37 +224,5 @@ onBeforeUnmount(clearSmsTimer)
         </aside>
       </div>
     </section>
-
-    <LoadingState v-if="loading" label="正在加载 GPT Plus 报价…" />
-    <ErrorState v-else-if="error" :message="error" @retry="load" />
-    <template v-else>
-      <section class="kpi-grid kpi-grid--three">
-        <article class="kpi-card"><div class="kpi-card__icon"><ShoppingBag :size="19" /></div><div><p>采集报价</p><strong>{{ formatNumber(offers.length) }}</strong><small>PriceAI 当前快照</small></div></article>
-        <article class="kpi-card"><div class="kpi-card__icon"><ShoppingBag :size="19" /></div><div><p>有货估计</p><strong>{{ formatNumber(inStock) }}</strong><small>未标记为售罄/缺货</small></div></article>
-        <article class="kpi-card kpi-card--success"><div class="kpi-card__icon"><ShoppingBag :size="19" /></div><div><p>最低报价</p><strong>{{ formatCurrency(lowestPrice) }}</strong><small>按价格升序</small></div></article>
-      </section>
-
-      <section class="panel">
-        <div class="panel__header"><div><h2>ChatGPT Plus 价格表</h2><p>按价格排序，每页展示 10 条</p></div><a class="text-link" href="https://priceai.cc/products/chatgpt-plus" target="_blank" rel="noopener">查看原页面</a></div>
-        <div v-if="pagedOffers.length" class="table-wrap">
-          <table class="data-table data-table--wide">
-            <caption class="sr-only">ChatGPT Plus 价格报价</caption>
-            <thead><tr><th>价格</th><th>商家</th><th>库存</th><th>更新时间</th><th>商品</th><th>操作</th></tr></thead>
-            <tbody>
-              <tr v-for="(offer, index) in pagedOffers" :key="offerKey(offer, index)">
-                <td><strong>{{ formatCurrency(offer.price) }}</strong></td>
-                <td>{{ offerMerchant(offer) }}</td>
-                <td>{{ offerInventory(offer) ?? offer.stock ?? '—' }}</td>
-                <td class="nowrap">{{ formatDateTime(offerUpdatedAt(offer)) }}</td>
-                <td class="title-cell" :title="offer.title">{{ truncate(offer.title, 56) }}</td>
-                <td><a v-if="offerOrderUrl(offer)" class="button button--secondary button--small" :href="offerOrderUrl(offer)" target="_blank" rel="noopener"><ExternalLink :size="15" />购买</a><span v-else class="muted nowrap">无链接</span></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <PaginationBar v-if="offers.length" :page="page" :total-pages="totalPages" :total="offers.length" :page-size="pageSize" @change="page = $event" />
-        <EmptyState v-else title="暂无 GPT Plus 报价" description="点击“刷新报价”从 PriceAI 获取当前快照。" />
-      </section>
-    </template>
   </div>
 </template>
