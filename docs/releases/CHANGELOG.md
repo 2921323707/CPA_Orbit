@@ -4,6 +4,21 @@ All notable CPA Orbit changes are documented here. Versions follow Semantic Vers
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-07-20
+
+### Added
+
+- Added a native macOS Apple Silicon CI build and published ARM64 DMG and ZIP packages with SHA-256 checksums.
+- Added architecture and disk-image verification to the macOS packaging workflow.
+
+### Fixed
+
+- Corrected the Wails macOS bundle path to use the generated `CPA Orbit.app` name.
+
+### Contributors
+
+- Thanks to [@tomatokoko](https://github.com/tomatokoko) for proposing native Apple Silicon support in [issue #9](https://github.com/2921323707/CPA_Orbit/issues/9).
+
 ## [1.2.0] - 2026-07-20
 
 ### Added
