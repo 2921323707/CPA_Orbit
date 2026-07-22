@@ -141,4 +141,3 @@
 3. Run Go, frontend, desktop integration, and production build tests.
 4. Build the Windows Wails executable with `app/build-windows.ps1`.
 5. Verify the generated EXE exists, records its SHA-256, and report its absolute path for user approval.
-
