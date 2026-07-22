@@ -28,7 +28,7 @@ type Inspector interface {
 }
 
 type ConnectivityStore interface {
-	SaveConnectivity(string, model.Connectivity)
+	SaveConnectivity(string, model.Connectivity) error
 }
 
 type Status struct {
@@ -245,13 +245,9 @@ func (s *Scheduler) pollAccount(ctx context.Context, id string) {
 	accountCtx, cancel := context.WithTimeout(ctx, perAccountTimeout)
 	check, err := s.inspector.Inspect(accountCtx, id)
 	cancel()
-	if err != nil {
-		check = model.Connectivity{
-			Status: "error", ReasonCode: "account_poll_failed", CheckedAt: time.Now(),
-			Error: cleanError(err.Error()),
-		}
+	if err == nil {
+		err = s.store.SaveConnectivity(id, check)
 	}
-	s.store.SaveConnectivity(id, check)
 	s.mu.Lock()
 	s.status.Completed++
 	if err != nil {

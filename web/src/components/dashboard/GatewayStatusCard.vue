@@ -11,7 +11,7 @@ defineEmits<{ test: [id: number]; edit: [id: number] }>()
     <div class="gateway-card__signal"><span /><span /><span /></div>
     <div class="gateway-card__head">
       <div class="gateway-card__icon"><CloudCog v-if="status.target.kind === 'sub2api'" :size="22" /><ShieldCheck v-else :size="22" /></div>
-      <div><span class="eyebrow">{{ status.target.primary ? 'PRIMARY ROUTE' : 'FALLBACK ROUTE' }}</span><h3>{{ status.target.name }}</h3></div>
+      <div><span class="eyebrow">{{ status.target.primary ? 'PREFERRED TARGET' : 'ALTERNATE TARGET' }}</span><h3>{{ status.target.name }}</h3></div>
       <span class="gateway-card__kind">{{ status.target.kind }}</span>
     </div>
     <div class="gateway-card__status">

@@ -89,19 +89,20 @@ const sections = [
       <section id="quick-start" class="panel docs-section">
         <div class="docs-section__heading"><PlayCircle :size="21" /><div><h2>快速开始</h2><p>建议首次使用按以下顺序操作。</p></div></div>
         <ol class="docs-steps">
-          <li><span>1</span><div><strong>启动整套服务</strong><p>在项目根目录执行 <code>.\start-dev.ps1</code>。脚本会启动成熟版 CPA、Go 监控 API 和 Vue 控制台。</p></div></li>
+          <li><span>1</span><div><strong>启动 CPA Orbit 开发服务</strong><p>在项目根目录执行 <code>.\start-dev.ps1</code>。脚本启动 Go 监控 API、Vue 控制台，并按配置发现 CPA；它不会安装 Sub2API。</p></div></li>
           <li><span>2</span><div><strong>确认服务在线</strong><p>顶部服务器图标应显示在线状态；设置页中的默认 <code>base_url</code> 为 <code>http://127.0.0.1:8317/v1</code>。</p></div></li>
-			<li><span>3</span><div><strong>配置网关 companion</strong><p>打开 <code>/settings?section=gateways</code>，配置本地 CPA 或 Sub2API companion。密钥只写不回显，远程地址需显式允许并使用 HTTPS。</p></div></li>
+			<li><span>3</span><div><strong>连接外部 Sub2API</strong><p>先单独启动 Sub2API，例如 Docker 的 <code>http://127.0.0.1:8080</code>；在其“系统设置 → Admin API Key”创建密钥，再到 <code>/settings?section=gateways</code> 添加目标并检查连接。</p></div></li>
 			<li><span>4</span><div><strong>预检并显式部署</strong><p>选择 Auth JSON，先完成本地安全预检与 Provider/日期归档，再明确选择唯一兼容 CPA 或 Sub2API 目标；系统不会自动兜底。</p></div></li>
           <li><span>5</span><div><strong>配置账号检查</strong><p>账号状态/额度轮询与报价监控独立，默认每 5 分钟执行；周期设为 <code>0</code> 时关闭，也可手动检查。</p></div></li>
         </ol>
       </section>
 
       <section id="architecture" class="panel docs-section">
-        <div class="docs-section__heading"><Server :size="21" /><div><h2>系统组成</h2><p>三个本地服务协同工作，默认仅监听回环地址。</p></div></div>
+        <div class="docs-section__heading"><Server :size="21" /><div><h2>系统组成</h2><p>Orbit 服务与用户自行部署的网关协同工作；本机部署应仅监听回环地址。</p></div></div>
         <div class="docs-service-grid">
-          <article><span class="docs-service-grid__icon"><Server :size="20" /></span><strong>CLIProxyAPI 7.2.71</strong><code>127.0.0.1:8317</code><p>成熟版 CPA 服务，运行副本由订阅归档自动投影，并提供 OpenAI 兼容接口。</p></article>
-          <article><span class="docs-service-grid__icon"><Wrench :size="20" /></span><strong>Monitor API</strong><code>127.0.0.1:8090</code><p>负责报价抓取、归档、提醒、配置和连通性状态，与 Sub2API 的 8080 端口隔离。</p></article>
+          <article><span class="docs-service-grid__icon"><Server :size="20" /></span><strong>CLIProxyAPI</strong><code>127.0.0.1:8317</code><p>需要用户单独提供，官方 CPA Orbit 安装包不内置；用于明确选择的 CPA 运行目标。</p></article>
+          <article><span class="docs-service-grid__icon"><Server :size="20" /></span><strong>Sub2API</strong><code>127.0.0.1:8080</code><p>用户单独部署的外部号池服务；CPA Orbit 通过 Admin API Key 连接，不负责安装。</p></article>
+          <article><span class="docs-service-grid__icon"><Wrench :size="20" /></span><strong>Monitor API</strong><code>127.0.0.1:8090</code><p>负责报价抓取、归档、提醒、网关配置和连通性状态。</p></article>
           <article><span class="docs-service-grid__icon"><BookOpenText :size="20" /></span><strong>Vue 控制台</strong><code>127.0.0.1:5173</code><p>提供总览、报价、订阅、提醒、设置和本文档入口。</p></article>
         </div>
         <details class="docs-disclosure">
@@ -159,9 +160,9 @@ const sections = [
             <tr><td>延迟</td><td>逐账号请求 ChatGPT usage 接口的完整往返耗时；未入 CPA 池的归档不显示虚假的 0 ms。</td></tr>
             <tr><td>5H / 7D 额度</td><td>显示上游返回窗口的剩余百分比和重置时间；账号未提供对应窗口时显示“—”。</td></tr>
             <tr><td>有效期</td><td>按 JSON 的 <code>expired</code> 计算文件剩余有效天数，与 5H/7D 使用额度相互独立。</td></tr>
-            <tr><td>订阅文件</td><td>日期归档中的原始文件名，不显示 token；只有规范化后的完整 JSON 内容完全一致才判定为重复。</td></tr>
+            <tr><td>订阅文件</td><td>日期归档中的原始文件名，不显示 token；点击文件名打开详情抽屉，在其中执行检测、部署、迁移、解绑或 CPA 同步。</td></tr>
             <tr><td>入手价格</td><td>单个导入时可填写的本地记录项；不填写也可以继续，批量导入不设置该项。</td></tr>
-            <tr><td>计划轮询</td><td>账号状态/额度与报价监控使用独立周期，默认每 5 分钟；设为 <code>0</code> 时关闭，不由页面加载触发。</td></tr>
+            <tr><td>计划轮询</td><td>账号状态/额度与报价监控使用独立周期，默认每 5 分钟；兼容 Sub2API SSE 测试流，临时检查不可用进入待核对而非误报账号异常。</td></tr>
           </tbody></table></div>
         </details>
 		<div class="docs-callout docs-callout--warning"><AlertTriangle :size="18" /><p>同一个可刷新的 OAuth 凭据只能显式分配给一个兼容 CPA 或 Sub2API 目标。远端失败或结果不确定时不会自动兜底；请先核对 pending/uncertain 状态再重试。订阅转网关可能与上游服务条款冲突，请只在获得授权时使用。</p></div>
@@ -194,7 +195,8 @@ const sections = [
           <details open><summary>顶部服务器图标显示离线</summary><p>确认 <code>start-dev.ps1</code> 窗口仍在运行，并访问 <code>http://127.0.0.1:8090/api/health</code>。端口被占用时先关闭旧实例。</p></details>
           <details><summary>账号检测返回 HTTP 401</summary><p>这表示当前文件对应的 OAuth access token 无效、过期或刷新失败。优先重新获取该账号的 CPA JSON，而不是修改控制台客户端 API key。</p></details>
           <details><summary>连通性测试返回 HTTP 402</summary><p>代理已经收到请求，但上游账号通常不可用、额度不足或订阅失效。打开订阅详情确认文件和到期日，必要时重新购买并导入新 JSON。</p></details>
-          <details><summary>导入后 CPA 没有加载</summary><p>确认设置中的 CPA auth-dir 指向项目 <code>cpa/auths</code>，并开启“导入后同步到 CPA”。也可在订阅详情中手动点击“同步到 CPA”。</p></details>
+          <details><summary>Sub2API 检查连接失败</summary><p>先确认外部 Sub2API 正在运行且 Docker 已将端口映射为 <code>127.0.0.1:8080</code>。HTTP 401 通常表示填写的不是“系统设置 → Admin API Key”生成的管理员密钥；地址后不要添加 <code>/api/v1/admin</code>。</p></details>
+          <details><summary>订阅没有进入预期网关</summary><p>连接成功只表示网关可用。导入时仍需明确选择唯一目标；已有归档请点击订阅文件名打开详情并执行显式部署或迁移。若远端账号被重建，Orbit 仅在来源标记和强身份唯一匹配时自动修复绑定。</p></details>
           <details><summary>报价没有更新</summary><p>检查网络能否访问 PriceAI，再手动点击“刷新报价”。旧快照会保留，避免上游短暂失败导致页面清空。</p></details>
         </div>
       </section>

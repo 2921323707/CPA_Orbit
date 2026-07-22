@@ -7,15 +7,15 @@
     <a href="http://165.154.205.54/cpa_orbit/">
       <img src="https://img.shields.io/badge/Documentation-Open_online_docs-0B6159?style=for-the-badge&amp;logo=readthedocs&amp;logoColor=white" alt="Open CPA Orbit online documentation" />
     </a>
-    <a href="https://github.com/2921323707/CPA_Orbit/releases/tag/v1.2.0">
-      <img src="https://img.shields.io/badge/Windows-Download_v1.2.0-2563EB?style=for-the-badge&amp;logo=windows11&amp;logoColor=white" alt="Download CPA Orbit v1.2.0 for Windows" />
+    <a href="https://github.com/2921323707/CPA_Orbit/releases/tag/v1.2.1">
+      <img src="https://img.shields.io/badge/Windows-Download_v1.2.1-2563EB?style=for-the-badge&amp;logo=windows11&amp;logoColor=white" alt="Download CPA Orbit v1.2.1 for Windows" />
     </a>
   </p>
   <p><sub>English · 简体中文 · Searchable guides · Architecture · Deployment · Release notes</sub></p>
 
   <p>
     <a href="https://github.com/2921323707/CPA_Orbit/actions"><img src="https://img.shields.io/badge/CI-configured-2088FF?style=flat-square&amp;logo=githubactions&amp;logoColor=white" alt="CI configured" /></a>
-		<a href="https://github.com/2921323707/CPA_Orbit/releases"><img src="https://img.shields.io/badge/version-v1.3.0-2563EB?style=flat-square" alt="Version 1.3.0" /></a>
+		<a href="https://github.com/2921323707/CPA_Orbit/releases"><img src="https://img.shields.io/badge/next-v1.3.0-2563EB?style=flat-square" alt="Next version 1.3.0; latest published release 1.2.1" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22C55E?style=flat-square" alt="MIT License" /></a>
     <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?style=flat-square&amp;logo=go&amp;logoColor=white" alt="Go 1.25 or newer" /></a>
     <a href="https://vuejs.org/"><img src="https://img.shields.io/badge/Vue-3.5-42B883?style=flat-square&amp;logo=vuedotjs&amp;logoColor=white" alt="Vue 3.5" /></a>
@@ -106,12 +106,12 @@ flowchart LR
 	class SUB2,CPA,AUTH runtime;
 ```
 
-The provider/date archive under `subscriptions/{sub2api,cpa}/MMDD/` is the durable subscription asset source. A safe local Auth JSON preflight precedes an explicit assignment to exactly one compatible configured CPA or Sub2API companion; no automatic fallback occurs. SQLite records ownership and desired/observed bindings without becoming another credential store. See the [architecture dossier](docs/architecture/README.md), [gateway guide](docs/guide/sub2api-pool.md), and [ADR 0009](docs/architecture/adr/0009-safe-auth-preflight-and-explicit-gateway-assignment.md).
+The provider/date archive under `subscriptions/{sub2api,cpa}/MMDD/` is the durable subscription asset source. The current two-stage import flow performs a safe local Auth JSON preflight before the operator explicitly selects exactly one compatible CPA or Sub2API target; that flow never switches to another target after a failed or uncertain deployment. SQLite records ownership and desired/observed bindings without becoming another credential store. Older targetless deployment actions remain compatibility paths and should not be confused with the explicit import contract. See the [architecture dossier](docs/architecture/README.md), [gateway guide](docs/guide/sub2api-pool.md), and [ADR 0009](docs/architecture/adr/0009-safe-auth-preflight-and-explicit-gateway-assignment.md).
 
 ## Recent updates
 
 - Moved CPA/Sub2API gateway configuration into **Settings → Gateways** (`?section=gateways`) and removed the dedicated operations route.
-- Added two-stage safe Auth JSON preflight and explicit exactly-one compatible-target assignment; there is no automatic CPA/Sub2API fallback, and pending/uncertain results remain visible for reconciliation.
+- Added two-stage safe Auth JSON preflight and explicit exactly-one compatible-target assignment; the import commit never changes targets after failure, and pending/uncertain results remain visible for same-target reconciliation.
 - Retained provider/date archives and one logical credential assignment per active pool, with account status/quota polling independent from offer monitoring (five minutes by default; `0` disables it).
 - Unified K12 and unverified GPT Plus offers in a compact Price workspace with five-row pagination and direct checkout links.
 - Added deletable price-history samples with immediate chart re-rendering, single-source trend views, and corrected K12 collection filters.
@@ -136,8 +136,8 @@ See the complete [changelog](docs/releases/CHANGELOG.md).
 - Go 1.25 or newer
 - Node.js 20 or newer with npm
 - Windows 10/11 with WebView2 for the desktop executable
-- A local CLIProxyAPI runtime only when CPA proxy features are required
-- A local Sub2API deployment and administrator API key when that companion is configured
+- A separately installed CLIProxyAPI runtime only when CPA proxy features are required
+- A separately deployed Sub2API service and its administrator API key when Sub2API is configured; CPA Orbit does not install or bundle Sub2API
 
 ### Development workspace
 
@@ -152,7 +152,7 @@ cd CPA_Orbit
 | Web console | `http://127.0.0.1:5173/` |
 | Monitor API | `http://127.0.0.1:8090/api` |
 | CLIProxyAPI | `http://127.0.0.1:8317/v1` |
-| Sub2API | User configured; a loopback deployment is recommended |
+| Sub2API | External service configured by the operator; Docker on `http://127.0.0.1:8080` is the common local setup |
 | In-app guide | `http://127.0.0.1:5173/docs` |
 
 ### Windows desktop build
@@ -161,7 +161,7 @@ cd CPA_Orbit
 .\app\build-windows.ps1
 ```
 
-The portable executable is written to `app/build/bin/CPAOrbit.exe`. A repository build automatically shares the root `data/` and `subscriptions/` directories with the browser console and starts or reuses all required local services.
+The portable executable is written to `app/build/bin/CPAOrbit.exe`. A repository build shares the root `data/` and `subscriptions/` directories with the browser console and can discover the repository-local CLIProxyAPI runtime. Official packages embed neither CLIProxyAPI nor Sub2API; external companions must be installed and started separately.
 
 ### macOS Apple Silicon build
 
@@ -174,8 +174,11 @@ On an Apple Silicon Mac, this writes a native `CPA Orbit.app`, ZIP, drag-to-inst
 ## Verification
 
 ```powershell
-# Backend and desktop host
-.\.tools\go\bin\go.exe test ./...
+# Backend
+.\.tools\go\bin\go.exe -C server test ./...
+
+# Desktop host
+.\.tools\go\bin\go.exe -C app test ./...
 
 # Frontend production build and browser regression suite
 cd web

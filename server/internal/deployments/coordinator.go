@@ -239,14 +239,32 @@ func (c *Coordinator) deploy(ctx context.Context, subscriptionID string, targetI
 	if deployErr != nil {
 		binding.ObservedState = "error"
 		binding.LastError = cleanError(deployErr.Error())
+		var safe *gateways.DeploymentError
+		status := "failed"
+		if errors.As(deployErr, &safe) && safe.Outcome == gateways.DeploymentUncertain {
+			status = "uncertain"
+			binding.ObservedState = "uncertain"
+		}
+		if status == "uncertain" {
+			binding.DesiredState = "active"
+		}
 		_, _ = c.store.UpsertDeploymentBinding(ctx, binding)
 		if strings.TrimSpace(credential.LogicalIdentity) != "" {
-			_ = c.store.CompleteCredentialAssignment(ctx, credential.LogicalIdentity, "failed", binding.LastError)
+			assignmentStatus := status
+			if status == "uncertain" {
+				assignmentStatus = "reserved"
+			}
+			_ = c.store.CompleteCredentialAssignment(ctx, credential.LogicalIdentity, assignmentStatus, binding.LastError)
 		}
-		_ = c.store.CompleteSyncOperation(ctx, operation.ID, "failed", binding.LastError)
+		_ = c.store.CompleteSyncOperation(ctx, operation.ID, status, binding.LastError)
 		return controlplane.DeploymentBinding{}, deployErr
 	}
 	binding.RemoteAccountID = result.Binding.ExternalID
+	if result.Binding.Managed {
+		binding.Ownership = "managed"
+	} else {
+		binding.Ownership = "adopted"
+	}
 	binding.LastError = ""
 	persisted, err := c.store.UpsertDeploymentBinding(ctx, binding)
 	if err != nil {
@@ -447,8 +465,36 @@ func (c *Coordinator) Inspect(ctx context.Context, subscriptionID string) (model
 	if err != nil {
 		return model.Connectivity{}, err
 	}
-	result, err := adapter.Inspect(ctx, gateways.BindingRef{TargetID: strconvID(target.ID), ExternalID: selected.RemoteAccountID, Managed: selected.Ownership == "managed"}, credential)
-	return result.Connectivity, err
+	bindingRef := gateways.BindingRef{TargetID: strconvID(target.ID), ExternalID: selected.RemoteAccountID, Managed: selected.Ownership == "managed"}
+	result, err := adapter.Inspect(ctx, bindingRef, credential)
+	if err != nil || result.Connectivity.ReasonCode != "sub2api_account_not_found" {
+		return result.Connectivity, err
+	}
+	reconciler, ok := adapter.(gateways.BindingReconciler)
+	if !ok {
+		return result.Connectivity, nil
+	}
+	operation, operationErr := c.store.CreateSyncOperation(ctx, controlplane.SyncOperation{SubscriptionID: subscriptionID, TargetID: target.ID, Kind: "reconcile", Status: "running", Attempt: 1})
+	if operationErr != nil {
+		return model.Connectivity{}, operationErr
+	}
+	reconciliation, reconcileErr := reconciler.ReconcileBinding(ctx, bindingRef, credential)
+	if reconcileErr != nil || reconciliation.Outcome != "rebound" {
+		message := "Sub2API 绑定无法自动重新关联"
+		if reconcileErr != nil {
+			message = "Sub2API 绑定核对暂时不可用"
+		}
+		_ = c.store.CompleteSyncOperation(ctx, operation.ID, "failed", message)
+		return model.Connectivity{Status: "pending", ReasonCode: "binding_reconciliation_required", CheckedAt: time.Now(), Error: message}, nil
+	}
+	persisted, persistErr := c.store.RebindDeploymentBinding(ctx, subscriptionID, target.ID, selected.RemoteAccountID, reconciliation.Binding.ExternalID)
+	if persistErr != nil {
+		_ = c.store.CompleteSyncOperation(ctx, operation.ID, "failed", "binding changed during reconciliation")
+		return model.Connectivity{}, persistErr
+	}
+	_ = c.store.CompleteSyncOperation(ctx, operation.ID, "succeeded", "")
+	verified, verifyErr := adapter.Inspect(ctx, gateways.BindingRef{TargetID: strconvID(target.ID), ExternalID: persisted.RemoteAccountID, Managed: persisted.Ownership == "managed"}, credential)
+	return verified.Connectivity, verifyErr
 }
 
 func fingerprint(data []byte) string {

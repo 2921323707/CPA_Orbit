@@ -91,30 +91,34 @@ sequenceDiagram
 
   Operator->>UI: Select one or more JSON files
   UI->>UI: Validate extension and show queue
-	UI->>API: POST multipart /subscriptions/import?deploy=true
+	UI->>API: POST /subscriptions/import/preflight
   API->>Guard: Bound size, sanitize name, parse JSON
   Guard->>Archive: Compare canonical full-document identity
-  alt New subscription
-    Archive-->>Guard: No canonical match
-    Guard->>Archive: Atomic dated archive write
-		Guard-->>UI: Safe preflight + compatible targets
-		UI->>Coordinator: Confirm exactly one target
-		Coordinator->>Target: Deploy credential
-		alt Target confirms success
-			Target-->>Coordinator: Managed account ID
-		else Target is pending, uncertain, or failed
-			Coordinator-->>API: Preserve reconcilable state; no fallback
-		end
-    API-->>UI: 200 + import result
-    UI-->>Operator: Success toast and refreshed list
-  else Duplicate or invalid document
-    Guard-->>API: Typed safe error
-    API-->>UI: 4xx sanitized response
-    UI-->>Operator: Actionable error toast
+  Guard-->>UI: Signed preflight + compatible targets
+  Operator->>UI: Select exactly one target
+	UI->>API: POST /subscriptions/import/commit?targetId=...
+  API->>Guard: Verify signed digest and target compatibility
+  Guard->>Archive: Atomic provider/date archive write
+  API->>Coordinator: Deploy archived credential
+  Coordinator->>Target: Import through target admin contract
+  alt First successful commit
+    Target-->>Coordinator: Managed or adopted account ID
+    API-->>UI: 201 + archive, binding, and outcome
+  else Same successful operation submitted again
+    API-->>UI: 200 + idempotent existing result
+  else Retryable failure or uncertain transport outcome
+    Coordinator-->>API: Persist sanitized outcome and binding
+    API-->>UI: Typed error + archived=true + retryable flag
+    opt Operator retries safely
+      UI->>API: Re-submit same commit token, file, and target
+      API->>Coordinator: Resume same durable operation
+    end
+  else Invalid, conflict, or definite failure
+    API-->>UI: Typed sanitized 4xx/5xx result
   end
 ```
 
-The optional acquisition price never gates the import. It is metadata, not a confirmation boundary. The confirmation boundary is the second-stage explicit selection of exactly one compatible target after safe local Auth JSON preflight.
+The optional acquisition price never gates the import. It is metadata and part of the durable operation's idempotency contract, not a confirmation boundary. The confirmation boundary is the second-stage explicit selection of exactly one compatible target after safe local Auth JSON preflight. A retryable commit resumes the same operation and target without creating another archive or switching gateways.
 
 ## 4. Trust boundaries and secret flow
 
@@ -142,7 +146,7 @@ flowchart LR
 | Failure | User-visible behavior | Recovery |
 |---|---|---|
 | Monitor API cannot bind port 8090 | Startup validates the existing listener; a non-CPA service is rejected | Free the port or start the configured CPA Orbit backend |
-| Selected CPA/Sub2API target is unavailable during import | Archive remains safe; deployment is failed, pending, or uncertain without automatic fallback | Reconcile the selected target, then retry or explicitly choose another compatible target |
+| Selected CPA/Sub2API target is unavailable during import | Archive remains safe; a sanitized failed or uncertain outcome identifies the original operation and target | Retry only when marked safe to resume the same operation; otherwise reconcile/detach before explicitly choosing another target |
 | CLIProxyAPI is unavailable | Embedded backend remains online; CPA status is shown independently as offline | Start the companion runtime or correct its configured path |
 | Upstream price/SMS service fails | Last valid snapshot remains available with a sanitized error state | Retry without inventing price or verification data |
 | Import is invalid or duplicated | No archive overwrite; typed error appears in the UI | Correct the document or select a distinct credential file |

@@ -18,8 +18,8 @@ All services bind to `127.0.0.1` by default. Do not expose them directly to an u
 | Go | 1.25 | Monitor API and desktop host |
 | Node.js | 20 | Vue console build |
 | WebView2 | Windows 10/11 | Desktop rendering |
-| Sub2API | Optional | Configurable local companion for compatible Auth JSON |
-| CLIProxyAPI | Optional | Configurable local CPA companion |
+| Sub2API | Optional, separately deployed | External gateway for compatible Auth JSON; not bundled by CPA Orbit |
+| CLIProxyAPI | Optional, separately supplied | CPA companion; not embedded in official CPA Orbit packages |
 
 ## Start the workspace
 
@@ -34,6 +34,7 @@ cd CPA_Orbit
 | Web console | `http://127.0.0.1:5173/` |
 | Monitor API | `http://127.0.0.1:8090/api` |
 | CLIProxyAPI | `http://127.0.0.1:8317/v1` |
+| Sub2API | User-managed; local Docker commonly publishes `http://127.0.0.1:8080` |
 
 ## Confirm health
 
@@ -49,7 +50,7 @@ Open **Settings** and confirm the local base URL, the `cpa/auths` directory, and
 
 ## Configure a gateway companion
 
-Open **Settings → Gateways** (`/settings?section=gateways`) and configure a local CPA or generic local Sub2API companion. Keys are write-only. Remote endpoints require explicit approval and HTTPS; loopback is preferred. See [gateway and subscription guidance](/guide/sub2api-pool) for assignment and reconciliation rules.
+`start-dev.ps1` does not install Sub2API. Start it separately—for example with Docker—and confirm its user-managed endpoint is reachable. In the Sub2API administrator interface, open **System Settings → Admin API Key** and create a key. Then open **CPA Orbit → Settings → Gateways** (`/settings?section=gateways`), add a Sub2API target, enter the endpoint and key, save, and run **Check connection**. Keys are write-only. Remote endpoints require explicit approval and HTTPS; loopback is preferred. See [gateway and subscription guidance](/guide/sub2api-pool) for assignment and reconciliation rules.
 
 ## Import a subscription
 
@@ -57,7 +58,7 @@ Open **Settings → Gateways** (`/settings?section=gateways`) and configure a lo
 Safe local preflight → provider/date archive → explicitly choose exactly one compatible CPA or Sub2API target
 ```
 
-A pending or uncertain deployment remains visible for reconciliation; Orbit does not automatically fall back to another target. Single-file imports may record an acquisition price. Identity is based on normalized full JSON content rather than a filename or email address.
+A failed or uncertain import deployment remains visible for reconciliation and never changes to another target. Retryable results resume the same durable operation and target without creating a second archive. Single-file imports may record an acquisition price. Identity is based on normalized full JSON content rather than a filename or email address.
 
 ::: warning Sensitive material
 CPA JSON contains bearer tokens. Never attach it to an issue, chat, log, screenshot, or public repository.

@@ -7,14 +7,19 @@ All notable CPA Orbit changes are documented here. Versions follow Semantic Vers
 ### Added
 
 - Added configurable CPA and generic local Sub2API companion targets, managed/adopted bindings, and one logical credential assignment per active pool.
-- Added two-stage safe Auth JSON preflight, explicit exactly-one compatible-target deployment, and pending/uncertain reconciliation without automatic fallback.
+- Added two-stage safe Auth JSON preflight, explicit exactly-one compatible-target deployment, and pending/uncertain reconciliation without cross-target fallback.
+- Added structured deployment outcomes with sanitized error code, HTTP status, retryability, and same-operation/same-target recovery without duplicate archives.
 - Added SQLite-backed 15-minute request, Token, latency, and cost aggregates with 90-day retention and stale-last-valid snapshots.
+- Added Sub2API SSE account-test compatibility and strict stale-binding reconciliation using Orbit provenance plus strong identity, without exposing credentials or guessing ambiguous accounts.
 
 ### Changed
 
 - Gateway configuration now lives under **Settings → Gateways**; the dedicated operations route and external JSON converter were removed, while the Luban toolbox remains.
+- Sub2API remains an externally deployed service and is not bundled with CPA Orbit. Official packages also do not embed CLIProxyAPI.
 - Provider/date archives remain durable. Account status/quota polling is independent from offer monitoring, defaults to five minutes, and is disabled by interval `0`.
-- Subscription health checks use their explicit Sub2API/CPA binding; deletion first removes managed runtime accounts and never deletes adopted remote accounts.
+- Subscription health checks use their explicit Sub2API/CPA binding; transient inspection failures no longer become false account abnormalities, and concurrent check persistence is serialized.
+- The subscription table no longer has a crowded right-side action column; selecting the filename opens the detail drawer, which retains testing and binding actions.
+- Deletion first removes managed runtime accounts and never deletes adopted remote accounts.
 
 ### Security
 

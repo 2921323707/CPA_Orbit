@@ -63,9 +63,13 @@ Environment overrides are also supported:
 
 The desktop configuration is deliberately separate from `data/settings.json`. The latter remains managed by the Settings screen and stores monitor/CLIProxyAPI settings. Secret-bearing repository-local files are never copied into a build.
 
-## CLIProxyAPI
+## External gateway companions
 
-The desktop package remains lightweight and does not embed the ignored, Windows-only CLIProxyAPI executable. Repository builds discover and start the existing `cpa/app` runtime automatically. A standalone package can place `cli-proxy-api.exe` and `config.yaml` under a `cpa/` directory beside `CPAOrbit.exe`, or use the environment overrides above. The default URL remains `http://127.0.0.1:8317/v1`, and remote addresses require the existing explicit opt-in.
+Official CPA Orbit EXE, DMG, and ZIP artifacts embed the Orbit frontend and control plane only. They embed neither Sub2API nor CLIProxyAPI.
+
+Sub2API should normally run as a separately managed service, such as a local Docker deployment exposed at `http://127.0.0.1:8080`. Configure its running endpoint and the Admin API Key from **Settings → Gateways**. Advanced desktop companion configuration or `CPA_ORBIT_SUB2API_*` environment overrides can supervise a user-supplied executable, but CPA Orbit never downloads or installs that executable and stops it only when Orbit started it.
+
+The ignored, Windows-only CLIProxyAPI executable is also external. Repository builds discover and start the existing `cpa/app` runtime automatically. A standalone package can place `cli-proxy-api.exe` and `config.yaml` under a `cpa/` directory beside `CPAOrbit.exe`, or use the environment overrides above. The default URL remains `http://127.0.0.1:8317/v1`, and remote addresses require the existing explicit opt-in.
 
 ## Development
 

@@ -54,13 +54,14 @@ type fakeConnectivityStore struct {
 	checks map[string]model.Connectivity
 }
 
-func (f *fakeConnectivityStore) SaveConnectivity(id string, check model.Connectivity) {
+func (f *fakeConnectivityStore) SaveConnectivity(id string, check model.Connectivity) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.checks == nil {
 		f.checks = make(map[string]model.Connectivity)
 	}
 	f.checks[id] = check
+	return nil
 }
 
 func newSettings(t *testing.T, minutes int) *config.Store {

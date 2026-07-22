@@ -1,8 +1,8 @@
 # Sub2API Control Plane Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **Historical implementation plan.** ADR 0009 supersedes the original automatic primary/fallback and dedicated operations-route design. Current imports explicitly select one compatible target, do not switch targets after failure, and configure gateway health under Settings. Verification, packaging, checksum, tag, and release publication remain incomplete until recorded separately.
 
-**Goal:** Evolve CPA Orbit into a local-first subscription control plane where Sub2API is the primary gateway and CPA remains a lightweight fallback, with safe GPT Plus/Codex account deployment, unified health, operations, and token-usage views, followed by a verified Windows EXE build.
+**Goal:** Evolve CPA Orbit into a local-first subscription control plane with safe GPT Plus/Codex account deployment, explicit CPA/Sub2API target assignment, unified health and token-usage infrastructure, followed by a verified Windows EXE build.
 
 **Architecture:** Keep the existing Go/Vue/Wails modular monolith. Separate durable subscription assets from gateway targets and deployment bindings, persist relational control-plane and aggregate usage state in SQLite, retain raw credential JSON in the protected archive, and access CPA/Sub2API exclusively through gateway adapters. Sub2API remains authoritative for raw request logs and runtime scheduling; Orbit stores bindings and bounded aggregate snapshots.
 
@@ -83,7 +83,7 @@
 - Modify: `server/internal/httpapi/server.go`
 
 **Steps:**
-1. Write tests for Sub2API-primary deployment, duplicate update, failure recovery, adopted accounts, CPA fallback, and ownership-safe detach.
+1. Write tests for explicit Sub2API deployment, duplicate update, failure recovery, adopted accounts, and manually selected CPA alternatives, and ownership-safe detach.
 2. Add durable, idempotent deployment operations and binding state transitions.
 3. Make new Codex/GPT subscription imports deploy to configured Sub2API by explicit option, with archive success retained if remote deployment fails.
 4. Enforce one primary runtime for refreshable OAuth credentials.
@@ -104,7 +104,7 @@
 4. Preserve the last valid snapshot when Sub2API is unavailable.
 5. Add configurable 90-day aggregate retention and background collection.
 
-### Task 7: Build the unified gateway, subscription-pool, and operations UI
+### Task 7: Build the unified gateway and subscription-pool UI *(operations route superseded by ADR 0009)*
 
 **Files:**
 - Modify: `web/src/views/DashboardView.vue`
@@ -119,13 +119,13 @@
 
 **Steps:**
 1. Add frontend unit/e2e fixtures for configured, offline, stale, and partial-failure states.
-2. Add Sub2API-primary and CPA-fallback target cards.
+2. Add independently configured Sub2API and CPA target cards.
 3. Show each subscription's primary gateway, binding state, quota, and deployment actions.
 4. Add GPT Plus/Codex import destination and safe migration controls.
 5. Add operations KPIs, token/cost trends, account availability, error state, and model/account breakdowns.
 6. Verify responsive desktop layout and secret-free rendering.
 
-### Task 8: Migration, documentation, and release verification
+### Task 8: Migration, documentation, and release verification *(still pending final evidence)*
 
 **Files:**
 - Modify: `docs/architecture/README.md`

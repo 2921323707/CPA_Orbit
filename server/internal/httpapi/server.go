@@ -702,13 +702,14 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, compat.ReasonCode, "authentication JSON is incompatible with the selected target")
 		return
 	}
-	op, created, err := s.control.ReserveImportOperation(r.Context(), controlplane.ImportOperation{ID: claims.OperationID, Digest: claims.Digest, TargetID: targetID, Status: "running"})
+	acquisitionPrice := strings.TrimSpace(r.URL.Query().Get("acquisitionPrice"))
+	op, created, err := s.control.ReserveImportOperation(r.Context(), controlplane.ImportOperation{ID: claims.OperationID, Digest: claims.Digest, TargetID: targetID, Status: "running", AcquisitionPrice: acquisitionPrice})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "import_reservation_failed", "import could not be reserved")
 		return
 	}
 	if !created {
-		if op.Digest != claims.Digest || op.TargetID != targetID {
+		if op.Digest != claims.Digest || op.TargetID != targetID || op.AcquisitionPrice != acquisitionPrice {
 			writeError(w, http.StatusConflict, "operation_conflict", "preflight operation was already used differently")
 			return
 		}
@@ -719,7 +720,35 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			bindings, _ := s.deployments.Bindings(r.Context(), sub.ID)
-			writeJSON(w, http.StatusOK, map[string]any{"subscription": sub, "deployment": bindingForTarget(bindings, targetID), "idempotent": true})
+			writeJSON(w, http.StatusOK, map[string]any{"operationId": claims.OperationID, "subscriptionId": sub.ID, "subscription": sub, "deployment": bindingForTarget(bindings, targetID), "outcome": "succeeded", "retryable": false, "httpStatus": http.StatusOK, "archived": true, "idempotent": true})
+			return
+		}
+		if op.Status == "failed" && op.Retryable && op.SubscriptionID != "" {
+			sub, found := s.subs.Get(op.SubscriptionID)
+			if !found {
+				writeError(w, http.StatusConflict, "operation_incomplete", "import operation archive is unavailable")
+				return
+			}
+			if _, retryErr := s.control.RetryImportOperation(r.Context(), claims.OperationID); retryErr != nil {
+				writeError(w, http.StatusConflict, "operation_not_retryable", "import operation cannot be retried")
+				return
+			}
+			binding, deployErr := s.deployments.Deploy(r.Context(), sub.ID, targetID)
+			if deployErr != nil {
+				var safe *gateways.DeploymentError
+				code, message, outcome, retryable, status := "deployment_failed", "subscription was archived but deployment failed", "failed", false, http.StatusBadGateway
+				if errors.As(deployErr, &safe) {
+					code, message, outcome, retryable, status = safe.Code, safe.Message, string(safe.Outcome), safe.Retryable, safe.HTTPStatus
+					if status == 0 {
+						status = http.StatusBadGateway
+					}
+				}
+				_ = s.control.CompleteImportOperationOutcome(r.Context(), claims.OperationID, "failed", sub.ID, message, code, outcome, retryable, status)
+				writeJSON(w, status, map[string]any{"operationId": claims.OperationID, "subscriptionId": sub.ID, "targetId": targetID, "outcome": outcome, "retryable": retryable, "httpStatus": status, "archived": true, "error": map[string]any{"code": code, "message": message}})
+				return
+			}
+			_ = s.control.CompleteImportOperationOutcome(r.Context(), claims.OperationID, "succeeded", sub.ID, "", "", "", false, http.StatusOK)
+			writeJSON(w, http.StatusOK, map[string]any{"operationId": claims.OperationID, "subscriptionId": sub.ID, "deployment": binding, "outcome": "succeeded", "retryable": false, "httpStatus": http.StatusOK, "archived": true, "idempotent": true})
 			return
 		}
 		writeError(w, http.StatusConflict, "operation_in_progress", "import operation is already in progress")
@@ -729,25 +758,32 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
 	if gateways.Kind(target.Kind) == gateways.KindCPA {
 		provider = string(gateways.KindCPA)
 	}
-	acquisitionPrice := strings.TrimSpace(r.URL.Query().Get("acquisitionPrice"))
 	sub, _, err := s.subs.ImportWithOptions(data, header.Filename, subscriptions.ImportOptions{
-		AcquisitionPrice: acquisitionPrice,
+		AcquisitionPrice: op.AcquisitionPrice,
 		ArchiveProvider:  provider,
 		SkipLegacySync:   true,
 	})
 	if err != nil {
-		_ = s.control.CompleteImportOperation(r.Context(), claims.OperationID, "failed", "", "archive_failed")
+		_ = s.control.CompleteImportOperationOutcome(r.Context(), claims.OperationID, "failed", "", "subscription could not be archived", "archive_failed", "failed", false, http.StatusBadRequest)
 		writeError(w, http.StatusBadRequest, "import_failed", "subscription could not be archived")
 		return
 	}
 	binding, err := s.deployments.Deploy(r.Context(), sub.ID, targetID)
 	if err != nil {
-		_ = s.control.CompleteImportOperation(r.Context(), claims.OperationID, "failed", sub.ID, "deployment_failed")
-		writeError(w, http.StatusBadGateway, "deployment_failed", "subscription was archived but deployment failed")
+		var safe *gateways.DeploymentError
+		code, message, outcome, retryable, status := "deployment_failed", "subscription was archived but deployment failed", "failed", false, http.StatusBadGateway
+		if errors.As(err, &safe) {
+			code, message, outcome, retryable, status = safe.Code, safe.Message, string(safe.Outcome), safe.Retryable, safe.HTTPStatus
+			if status == 0 {
+				status = http.StatusBadGateway
+			}
+		}
+		_ = s.control.CompleteImportOperationOutcome(r.Context(), claims.OperationID, "failed", sub.ID, message, code, outcome, retryable, status)
+		writeJSON(w, status, map[string]any{"operationId": claims.OperationID, "subscriptionId": sub.ID, "targetId": targetID, "outcome": outcome, "retryable": retryable, "httpStatus": status, "archived": true, "error": map[string]any{"code": code, "message": message}})
 		return
 	}
-	_ = s.control.CompleteImportOperation(r.Context(), claims.OperationID, "succeeded", sub.ID, "")
-	writeJSON(w, http.StatusCreated, map[string]any{"subscription": sub, "deployment": binding, "idempotent": false})
+	_ = s.control.CompleteImportOperationOutcome(r.Context(), claims.OperationID, "succeeded", sub.ID, "", "", "", false, http.StatusCreated)
+	writeJSON(w, http.StatusCreated, map[string]any{"operationId": claims.OperationID, "subscriptionId": sub.ID, "subscription": sub, "deployment": binding, "outcome": "succeeded", "retryable": false, "httpStatus": http.StatusCreated, "archived": true, "idempotent": false})
 }
 
 func bindingForTarget(bindings []controlplane.DeploymentBinding, targetID int64) any {
@@ -923,7 +959,7 @@ func (s *Server) handleSubscriptionAction(w http.ResponseWriter, r *http.Request
 			err = nil
 		}
 		if err == nil {
-			s.subs.SaveConnectivity(id, result)
+			err = s.subs.SaveConnectivity(id, result)
 		}
 		if errors.Is(err, os.ErrNotExist) {
 			writeError(w, http.StatusNotFound, "not_found", "subscription not found")

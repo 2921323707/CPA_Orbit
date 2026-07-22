@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CloudUpload, Eye, ExternalLink, FileJson2, FolderSync, KeyRound, Network, Play, RefreshCw, Search, TestTube2, Trash2, Unplug } from 'lucide-vue-next'
+import { CloudUpload, ExternalLink, FileJson2, FolderSync, KeyRound, Network, Play, RefreshCw, Search, TestTube2, Trash2, Unplug } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import BaseDrawer from '../components/common/BaseDrawer.vue'
 import EmptyState from '../components/common/EmptyState.vue'
@@ -9,8 +9,8 @@ import PaginationBar from '../components/common/PaginationBar.vue'
 import StatusBadge from '../components/common/StatusBadge.vue'
 import QuotaCell from '../components/subscriptions/QuotaCell.vue'
 import { useToast } from '../composables/useToast'
-import { api } from '../services/api'
-import type { DeploymentBinding, GatewayTarget, ImportPreflightResponse, ImportTargetOption, Subscription, SubscriptionConnectivity, SubscriptionInsights, SubscriptionPollStatus } from '../types/api'
+import { ApiError, api } from '../services/api'
+import type { DeploymentBinding, GatewayTarget, ImportCommitResponse, ImportPreflightResponse, ImportTargetOption, Subscription, SubscriptionConnectivity, SubscriptionInsights, SubscriptionPollStatus } from '../types/api'
 import { formatCurrency, formatDateTime, getErrorMessage } from '../utils/format'
 import {
   subscriptionAccountId,
@@ -42,6 +42,17 @@ interface ImportQueueItem {
   preflight?: ImportPreflightResponse
   selectedTargetId?: number
   error?: string
+  failure?: {
+    code?: string
+    operationId: string
+    subscriptionId?: string
+    targetId: number
+    outcome?: string
+    retryable: boolean
+    httpStatus?: number
+    archived?: boolean
+  }
+  result?: ImportCommitResponse
 }
 
 const importQueue = ref<ImportQueueItem[]>([])
@@ -70,15 +81,35 @@ const selectedItems = computed(() => subscriptions.value.filter((item) => select
 const allPageSelected = computed(() => subscriptions.value.length > 0 && subscriptions.value.every((item) => selectedIds.value.has(item.id)))
 const primaryTarget = computed(() => gatewayTargets.value.find((target) => target.enabled && target.primary))
 function itemBindings(item: Subscription) { return bindings.value[String(item.id)] || [] }
-function activeBinding(item: Subscription) { return itemBindings(item).find((binding) => binding.observedState === 'active' && binding.mode === 'primary') || itemBindings(item).find((binding) => binding.observedState === 'active') }
+function activeBinding(item: Subscription) { return itemBindings(item).find((binding) => binding.desiredState === 'active' && binding.observedState === 'active' && binding.mode === 'primary') || itemBindings(item).find((binding) => binding.desiredState === 'active' && binding.observedState === 'active') }
+function diagnosticBinding(item: Subscription) {
+  return itemBindings(item).find((binding) => ['uncertain', 'error', 'failed'].includes(String(binding.observedState).toLowerCase()))
+}
+function displayedBinding(item: Subscription) { return activeBinding(item) || diagnosticBinding(item) }
 function targetName(targetId?: number) { return gatewayTargets.value.find((target) => target.id === targetId)?.name || (targetId ? `Target ${targetId}` : '未部署') }
+function importTargetName(item: ImportQueueItem, targetId: number) {
+  return item.preflight?.targets.find((target) => target.targetId === targetId)?.name || targetName(targetId)
+}
+function bindingState(binding?: DeploymentBinding) {
+  if (!binding) return { label: '未部署', tone: 'neutral' as const }
+  const state = String(binding.observedState || 'unknown').toLowerCase()
+  if (state === 'active') return { label: targetName(binding.targetId), tone: 'success' as const }
+  if (state === 'uncertain') return { label: `${targetName(binding.targetId)} · 结果不确定`, tone: 'warning' as const }
+  if (state === 'error' || state === 'failed') return { label: `${targetName(binding.targetId)} · 部署失败`, tone: 'danger' as const }
+  return { label: `${targetName(binding.targetId)} · ${state}`, tone: 'neutral' as const }
+}
+function safeBindingError(binding?: DeploymentBinding) {
+  if (!binding?.lastError) return ''
+  return binding.lastError.length > 240 ? `${binding.lastError.slice(0, 240)}…` : binding.lastError
+}
 function categoryFromConnectivity(connectivity?: SubscriptionConnectivity | null) {
+  const status = String(connectivity?.status || 'unknown').toLowerCase()
   const fiveHour = connectivity?.quota?.fiveHour?.remainingPercent
   const sevenDay = connectivity?.quota?.sevenDay?.remainingPercent
-  if (fiveHour != null && fiveHour <= 0 && (sevenDay == null || sevenDay > 0)) return 'normal'
-  if (connectivity?.status === 'ok') return 'normal'
-	const status = String(connectivity?.status || 'unknown').toLowerCase()
-	if (status === 'unknown' || status === 'pending') return 'pending'
+  if (status === 'quota_exhausted' && fiveHour != null && fiveHour <= 0 && (sevenDay == null || sevenDay > 0)) return 'normal'
+  if (['ok', 'active', 'healthy', 'connected'].includes(status)) return 'normal'
+  if (['unknown', 'pending', 'sub2api_unavailable', 'cpa_unavailable', 'timeout', 'upstream_error'].includes(status)) return 'pending'
+  if (['account_test_unavailable', 'account_poll_failed', 'binding_reconciliation_required'].includes(String(connectivity?.reasonCode || '').toLowerCase())) return 'pending'
   return 'error'
 }
 
@@ -126,6 +157,8 @@ function onDrop(event: DragEvent) {
 async function preflightItem(item: ImportQueueItem) {
   item.status = 'preflighting'
   item.error = ''
+  item.failure = undefined
+  item.result = undefined
   item.preflight = undefined
   item.selectedTargetId = undefined
   try {
@@ -192,6 +225,65 @@ async function load() {
   }
 }
 
+function commitFailure(item: ImportQueueItem, error: unknown) {
+  item.status = 'error'
+  item.error = getErrorMessage(error)
+  if (!(error instanceof ApiError) || !item.preflight || !item.selectedTargetId) {
+    item.failure = undefined
+    return
+  }
+  item.failure = {
+    code: error.code,
+    operationId: error.operationId || item.preflight.operationId,
+    subscriptionId: error.subscriptionId,
+    targetId: typeof error.target === 'number' ? error.target : item.selectedTargetId,
+    outcome: error.outcome,
+    retryable: error.retryable === true,
+    httpStatus: error.httpStatus,
+    archived: error.archived,
+  }
+}
+
+async function commitItem(item: ImportQueueItem, acquisitionPrice?: string) {
+  item.status = 'committing'
+  item.error = ''
+  try {
+    item.result = await api.commitSubscriptionImport({
+      file: item.file,
+      preflightToken: item.preflight!.preflightToken,
+      targetId: item.selectedTargetId!,
+      acquisitionPrice,
+    })
+    item.failure = undefined
+    item.status = 'committed'
+    return true
+  } catch (err) {
+    commitFailure(item, err)
+    return false
+  }
+}
+
+async function retryCommit(item: ImportQueueItem) {
+  if (!item.failure?.retryable || !item.preflight || !item.selectedTargetId) return
+  importing.value = true
+  // Re-submit the same file, signed preflight token, operation ID and target.
+  // The backend resumes the durable operation and prevents a second archive.
+  const succeeded = await commitItem(item, importQueue.value.length === 1 ? String(acquisitionPrice.value ?? '').trim() : undefined)
+  importing.value = false
+  if (succeeded) {
+    toast.success(item.result?.idempotent ? '原操作重试成功（幂等恢复）' : '原操作重试成功')
+    importQueue.value = importQueue.value.filter((candidate) => candidate.key !== item.key)
+    if (!importQueue.value.length) {
+      acquisitionPrice.value = ''
+      if (fileInput.value) fileInput.value.value = ''
+    }
+  } else {
+    toast.error('原操作重试仍未完成，请根据安全诊断处理')
+  }
+  page.value = 1
+  await load()
+}
+
 async function commitImports() {
   if (!importQueue.value.length) return toast.error('请先选择 JSON 文件')
   const ready = importQueue.value.filter((item) => item.status === 'ready')
@@ -204,25 +296,12 @@ async function commitImports() {
   let imported = 0
   const failures: string[] = []
   for (const item of ready) {
-    item.status = 'committing'
-    try {
-      await api.commitSubscriptionImport({
-        file: item.file,
-        preflightToken: item.preflight!.preflightToken,
-        targetId: item.selectedTargetId!,
-        acquisitionPrice: ready.length === 1 ? normalizedPrice : undefined,
-      })
-      item.status = 'committed'
-      imported += 1
-    } catch (err) {
-      item.status = 'error'
-      item.error = getErrorMessage(err)
-      failures.push(`${item.file.name}：${item.error}`)
-    }
+    if (await commitItem(item, ready.length === 1 ? normalizedPrice : undefined)) imported += 1
+    else failures.push(`${item.file.name}：${item.error}`)
   }
   importing.value = false
   const message = `导入提交完成：成功 ${imported} · 失败 ${failures.length}`
-  if (failures.length) toast.error(`${message}；${failures.slice(0, 2).join('；')}`)
+  if (failures.length) toast.error(message)
   else toast.success(message)
   importQueue.value = importQueue.value.filter((item) => item.status !== 'committed')
   if (!importQueue.value.length) {
@@ -492,8 +571,21 @@ onBeforeUnmount(() => {
               <p v-if="!compatibleTargets(item).length" class="error-text">没有已启用且兼容的目标，请先在设置中配置网关。</p>
             </fieldset>
           </div>
-          <p v-if="item.error" class="error-text">{{ item.error }}</p>
-          <button v-if="item.status === 'error'" class="button button--secondary button--small" type="button" @click="preflightItem(item)"><RefreshCw :size="14" />重新预检</button>
+          <div v-if="item.failure" class="import-failure" role="alert">
+            <strong>{{ item.failure.archived ? '归档已保留，但目标部署未完成' : '提交未完成' }}</strong>
+            <p>{{ item.error }}</p>
+            <dl>
+              <div><dt>目标</dt><dd>{{ importTargetName(item, item.failure.targetId) }} (#{{ item.failure.targetId }})</dd></div>
+              <div><dt>操作</dt><dd><code>{{ item.failure.operationId }}</code></dd></div>
+              <div><dt>结果</dt><dd>{{ item.failure.outcome || 'failed' }}<template v-if="item.failure.httpStatus"> · HTTP {{ item.failure.httpStatus }}</template></dd></div>
+              <div v-if="item.failure.subscriptionId"><dt>归档</dt><dd><code>{{ item.failure.subscriptionId }}</code></dd></div>
+              <div v-if="item.failure.code"><dt>错误代码</dt><dd><code>{{ item.failure.code }}</code></dd></div>
+            </dl>
+            <small>{{ item.failure.retryable ? '可使用同一操作重试；不会重新预检或创建第二份归档。' : '此结果不可安全自动重试，请检查目标配置或订阅列表中的绑定诊断。' }}</small>
+          </div>
+          <p v-else-if="item.error" class="error-text">{{ item.error }}</p>
+          <button v-if="item.status === 'error' && item.failure?.retryable" class="button button--secondary button--small" type="button" :disabled="importing" @click="retryCommit(item)"><RefreshCw :size="14" />重试同一目标与操作</button>
+          <button v-else-if="item.status === 'error' && !item.failure" class="button button--secondary button--small" type="button" @click="preflightItem(item)"><RefreshCw :size="14" />重新预检</button>
         </article>
       </div>
       <div class="form-actions"><span class="muted">已选择 {{ importQueue.length }} 个文件</span><button class="button button--primary" type="button" :disabled="!importQueue.length || importing || importQueue.some((item) => item.status !== 'ready' || !item.selectedTargetId)" @click="commitImports"><CloudUpload :size="17" />{{ importing ? '提交中…' : '确认归档并部署' }}</button></div>
@@ -529,19 +621,18 @@ onBeforeUnmount(() => {
       <template v-else-if="subscriptions.length">
         <div class="table-wrap subscription-list-wrap">
         <table class="data-table data-table--wide subscription-table">
-          <thead><tr><th class="selection-column"><input type="checkbox" :checked="allPageSelected" aria-label="全选本页" @change="togglePageSelection(($event.target as HTMLInputElement).checked)" /></th><th>邮箱</th><th>分类</th><th>运行池</th><th class="numeric">入手价</th><th class="numeric">延迟</th><th>5H 额度</th><th>7D 额度</th><th>订阅文件</th><th>操作</th></tr></thead>
+          <thead><tr><th class="selection-column"><input type="checkbox" :checked="allPageSelected" aria-label="全选本页" @change="togglePageSelection(($event.target as HTMLInputElement).checked)" /></th><th>邮箱</th><th>分类</th><th>运行池</th><th class="numeric">入手价</th><th class="numeric">延迟</th><th>5H 额度</th><th>7D 额度</th><th>订阅文件</th></tr></thead>
           <tbody>
             <tr v-for="item in subscriptions" :key="item.id" :class="{ 'row--selected': selectedIds.has(item.id) }">
               <td class="selection-column"><input type="checkbox" :checked="selectedIds.has(item.id)" :aria-label="`选择 ${item.email || subscriptionFile(item)}`" @change="toggleSelection(item.id, ($event.target as HTMLInputElement).checked)" /></td>
               <td class="strong subscription-email" data-label="邮箱" :title="item.email || ''">{{ item.email || '—' }}</td>
               <td data-label="分类"><div class="check-state"><StatusBadge :tone="connectivityState(item).tone" :label="connectivityState(item).label" /><small :class="`check-state--${subscriptionCheckFreshness(item)}`">{{ subscriptionCheckFreshness(item) === 'never' ? '从未检查' : subscriptionCheckFreshness(item) === 'stale' ? `结果过期 · ${formatDateTime(subscriptionCheckedAt(item))}` : formatDateTime(subscriptionCheckedAt(item)) }}</small></div></td>
-              <td data-label="运行池"><span class="pool-binding" :class="{ 'is-active': activeBinding(item) }"><Network :size="13" />{{ targetName(activeBinding(item)?.targetId) }}</span></td>
+              <td data-label="运行池"><div class="pool-binding-state"><span class="pool-binding" :class="[`is-${bindingState(displayedBinding(item)).tone}`]"><Network :size="13" />{{ bindingState(displayedBinding(item)).label }}</span><small v-if="diagnosticBinding(item)?.lastError" class="pool-binding-error" :title="safeBindingError(diagnosticBinding(item))">{{ safeBindingError(diagnosticBinding(item)) }}</small></div></td>
               <td class="numeric nowrap" data-label="入手价">{{ subscriptionAcquisitionPrice(item) == null ? '—' : formatCurrency(subscriptionAcquisitionPrice(item)) }}</td>
-              <td class="numeric nowrap" data-label="延迟">{{ item.connectivity?.latencyMs == null || !item.connectivity?.httpStatus ? '—' : `${item.connectivity.latencyMs} ms` }}</td>
+              <td class="numeric nowrap" data-label="延迟">{{ item.connectivity?.latencyMs == null ? '—' : `${item.connectivity.latencyMs} ms` }}</td>
               <td data-label="5H 额度"><QuotaCell label="5 小时" :window="item.connectivity?.quota?.fiveHour" /></td>
               <td data-label="7D 额度"><QuotaCell label="7 天" :window="item.connectivity?.quota?.sevenDay" /></td>
-              <td data-label="订阅文件"><span class="file-name" :title="subscriptionFile(item)"><FileJson2 class="file-name__icon" :size="15" aria-hidden="true" />{{ subscriptionFile(item) }}</span></td>
-              <td data-label="操作"><div class="table-actions"><button class="button button--ghost button--small" type="button" @click="selected = item"><Eye :size="15" />详情</button><button class="button button--secondary button--small" type="button" :disabled="testingIds.has(item.id) || batchTesting" @click="testOne(item)"><TestTube2 :size="15" />{{ testingIds.has(item.id) ? '检测中' : '检测' }}</button></div></td>
+              <td data-label="订阅文件"><button class="subscription-file-trigger" type="button" :title="subscriptionFile(item)" :aria-label="`查看 ${subscriptionFile(item)} 详情`" @click="selected = item"><FileJson2 class="file-name__icon" :size="15" aria-hidden="true" /><span>{{ subscriptionFile(item) }}</span></button></td>
             </tr>
           </tbody>
         </table>
@@ -564,10 +655,11 @@ onBeforeUnmount(() => {
           <div><dt>入手价格</dt><dd>{{ subscriptionAcquisitionPrice(selected) == null ? '—' : formatCurrency(subscriptionAcquisitionPrice(selected)) }}</dd></div>
           <div><dt>计划</dt><dd>{{ selected.connectivity?.quota?.planType || subscriptionPlan(selected) }}</dd></div>
           <div><dt>最后检查</dt><dd>{{ subscriptionCheckFreshness(selected) === 'never' ? '从未检查' : subscriptionCheckFreshness(selected) === 'stale' ? `${formatDateTime(subscriptionCheckedAt(selected))}（已过期）` : formatDateTime(subscriptionCheckedAt(selected)) }}</dd></div>
-          <div><dt>调用延迟</dt><dd>{{ selected.connectivity?.latencyMs == null || !selected.connectivity?.httpStatus ? '—' : `${selected.connectivity.latencyMs} ms` }}</dd></div>
+          <div><dt>调用延迟</dt><dd>{{ selected.connectivity?.latencyMs == null ? '—' : `${selected.connectivity.latencyMs} ms` }}</dd></div>
           <div><dt>CPA 状态</dt><dd>{{ selected.connectivity?.cpaStatusMessage || selected.connectivity?.cpaStatus || '—' }}</dd></div>
-          <div><dt>主运行池</dt><dd>{{ targetName(activeBinding(selected)?.targetId) }}</dd></div>
-          <div><dt>绑定归属</dt><dd>{{ activeBinding(selected)?.ownership === 'adopted' ? '外部接管（仅解绑）' : activeBinding(selected) ? 'Orbit 托管' : '未绑定' }}</dd></div>
+          <div><dt>主运行池</dt><dd :class="{ 'error-text': diagnosticBinding(selected) }">{{ bindingState(displayedBinding(selected)).label }}</dd></div>
+          <div><dt>绑定归属</dt><dd>{{ displayedBinding(selected)?.ownership === 'adopted' ? '外部接管（仅解绑）' : displayedBinding(selected) ? 'Orbit 托管' : '未绑定' }}</dd></div>
+          <div v-if="diagnosticBinding(selected)" class="detail-list__full"><dt>运行绑定诊断</dt><dd class="error-text">{{ safeBindingError(diagnosticBinding(selected)) || `绑定状态：${diagnosticBinding(selected)?.observedState}` }}</dd></div>
           <div><dt>5H 剩余额度</dt><dd><QuotaCell label="5 小时" :window="selected.connectivity?.quota?.fiveHour" /></dd></div>
           <div><dt>7D 剩余额度</dt><dd><QuotaCell label="7 天" :window="selected.connectivity?.quota?.sevenDay" /></dd></div>
           <div><dt>下次可重试</dt><dd>{{ formatDateTime(selected.connectivity?.nextRetryAt) }}</dd></div>
@@ -582,7 +674,7 @@ onBeforeUnmount(() => {
         <button class="button button--secondary" type="button" :disabled="testingIds.has(selected.id)" @click="testOne(selected)"><TestTube2 :size="17" />检测状态与额度</button>
 		<button v-if="activeBinding(selected)?.mode === 'fallback' && primaryTarget && activeBinding(selected)?.targetId !== primaryTarget.id" class="button button--primary" type="button" :disabled="deployingId === selected.id" @click="migrateToPrimary(selected)"><Network :size="17" />切回主号池</button>
         <button v-if="activeBinding(selected)" class="button button--danger" type="button" :disabled="deployingId === selected.id" @click="detachFromPool(selected)"><Unplug :size="17" />撤销运行绑定</button>
-        <button v-else class="button button--primary" type="button" :disabled="deployingId === selected.id" @click="deployToPool(selected)"><Network :size="17" />{{ deployingId === selected.id ? '部署中…' : '部署到主号池' }}</button>
+        <button v-else-if="!diagnosticBinding(selected)" class="button button--primary" type="button" :disabled="deployingId === selected.id" @click="deployToPool(selected)"><Network :size="17" />{{ deployingId === selected.id ? '部署中…' : '部署到主号池' }}</button>
         <button class="button button--secondary" type="button" :disabled="syncingId === selected.id" @click="syncToCpa(selected)"><FolderSync :size="17" />{{ syncingId === selected.id ? '同步中…' : '手动同步 CPA' }}</button>
       </template>
     </BaseDrawer>

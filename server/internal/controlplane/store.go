@@ -51,14 +51,19 @@ type DeploymentBinding struct {
 }
 
 type ImportOperation struct {
-	ID             string
-	Digest         string
-	TargetID       int64
-	Status         string
-	SubscriptionID string
-	LastError      string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID               string
+	Digest           string
+	TargetID         int64
+	Status           string
+	SubscriptionID   string
+	LastError        string
+	ErrorCode        string
+	Outcome          string
+	Retryable        bool
+	HTTPStatus       int
+	AcquisitionPrice string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 type CredentialAssignment struct {
@@ -151,8 +156,10 @@ func (s *Store) Close() error {
 func (s *Store) ImportOperation(ctx context.Context, opID string) (ImportOperation, error) {
 	var op ImportOperation
 	var created, updated string
-	err := s.db.QueryRowContext(ctx, `SELECT op_id, digest, target_id, status, subscription_id, last_error, created_at, updated_at FROM import_operations WHERE op_id=?`, opID).
-		Scan(&op.ID, &op.Digest, &op.TargetID, &op.Status, &op.SubscriptionID, &op.LastError, &created, &updated)
+	var retryable int
+	err := s.db.QueryRowContext(ctx, `SELECT op_id, digest, target_id, status, subscription_id, last_error, error_code, outcome, retryable, http_status, acquisition_price, created_at, updated_at FROM import_operations WHERE op_id=?`, opID).
+		Scan(&op.ID, &op.Digest, &op.TargetID, &op.Status, &op.SubscriptionID, &op.LastError, &op.ErrorCode, &op.Outcome, &retryable, &op.HTTPStatus, &op.AcquisitionPrice, &created, &updated)
+	op.Retryable = retryable != 0
 	if err != nil {
 		return ImportOperation{}, err
 	}
@@ -165,7 +172,7 @@ func (s *Store) ReserveImportOperation(ctx context.Context, op ImportOperation) 
 		return ImportOperation{}, false, errors.New("invalid import operation")
 	}
 	now := time.Now().UTC()
-	result, err := s.db.ExecContext(ctx, `INSERT INTO import_operations (op_id,digest,target_id,status,subscription_id,last_error,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(op_id) DO NOTHING`, op.ID, op.Digest, op.TargetID, defaultString(op.Status, "running"), op.SubscriptionID, op.LastError, formatTime(now), formatTime(now))
+	result, err := s.db.ExecContext(ctx, `INSERT INTO import_operations (op_id,digest,target_id,status,subscription_id,last_error,acquisition_price,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(op_id) DO NOTHING`, op.ID, op.Digest, op.TargetID, defaultString(op.Status, "running"), op.SubscriptionID, op.LastError, op.AcquisitionPrice, formatTime(now), formatTime(now))
 	if err != nil {
 		return ImportOperation{}, false, err
 	}
@@ -175,8 +182,23 @@ func (s *Store) ReserveImportOperation(ctx context.Context, op ImportOperation) 
 }
 
 func (s *Store) CompleteImportOperation(ctx context.Context, opID, status, subscriptionID, lastError string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE import_operations SET status=?, subscription_id=?, last_error=?, updated_at=? WHERE op_id=?`, status, subscriptionID, lastError, formatTime(time.Now().UTC()), opID)
+	return s.CompleteImportOperationOutcome(ctx, opID, status, subscriptionID, lastError, "", "", false, 0)
+}
+
+func (s *Store) CompleteImportOperationOutcome(ctx context.Context, opID, status, subscriptionID, lastError, errorCode, outcome string, retryable bool, httpStatus int) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE import_operations SET status=?, subscription_id=?, last_error=?, error_code=?, outcome=?, retryable=?, http_status=?, updated_at=? WHERE op_id=?`, status, subscriptionID, lastError, errorCode, outcome, boolInt(retryable), httpStatus, formatTime(time.Now().UTC()), opID)
 	return err
+}
+
+func (s *Store) RetryImportOperation(ctx context.Context, opID string) (ImportOperation, error) {
+	result, err := s.db.ExecContext(ctx, `UPDATE import_operations SET status='running', last_error='', error_code='', outcome='', retryable=0, http_status=0, updated_at=? WHERE op_id=? AND status='failed' AND retryable=1 AND subscription_id<>''`, formatTime(time.Now().UTC()), opID)
+	if err != nil {
+		return ImportOperation{}, err
+	}
+	if count, _ := result.RowsAffected(); count != 1 {
+		return ImportOperation{}, errors.New("import operation is not retryable")
+	}
+	return s.ImportOperation(ctx, opID)
 }
 
 func (s *Store) ReserveCredentialAssignment(ctx context.Context, logicalID, subscriptionID string, targetID int64) error {
@@ -293,6 +315,11 @@ func (s *Store) migrate(ctx context.Context) error {
 				status TEXT NOT NULL,
 				subscription_id TEXT NOT NULL DEFAULT '',
 				last_error TEXT NOT NULL DEFAULT '',
+				error_code TEXT NOT NULL DEFAULT '',
+				outcome TEXT NOT NULL DEFAULT '',
+				retryable INTEGER NOT NULL DEFAULT 0,
+				http_status INTEGER NOT NULL DEFAULT 0,
+				acquisition_price TEXT NOT NULL DEFAULT '',
 				created_at TEXT NOT NULL,
 				updated_at TEXT NOT NULL
 			)`,
@@ -334,14 +361,19 @@ func (s *Store) migrate(ctx context.Context) error {
 			return fmt.Errorf("migrate control-plane database: %w", err)
 		}
 	}
-	columns := []struct{ name, ddl string }{
-		{"default_group_ids", `ALTER TABLE gateway_targets ADD COLUMN default_group_ids TEXT NOT NULL DEFAULT '[]'`},
-		{"default_concurrency", `ALTER TABLE gateway_targets ADD COLUMN default_concurrency INTEGER NOT NULL DEFAULT 1`},
-		{"default_priority", `ALTER TABLE gateway_targets ADD COLUMN default_priority INTEGER NOT NULL DEFAULT 0`},
-		{"rate_multiplier", `ALTER TABLE gateway_targets ADD COLUMN rate_multiplier REAL NOT NULL DEFAULT 1`},
+	columns := []struct{ table, name, ddl string }{
+		{"gateway_targets", "default_group_ids", `ALTER TABLE gateway_targets ADD COLUMN default_group_ids TEXT NOT NULL DEFAULT '[]'`},
+		{"gateway_targets", "default_concurrency", `ALTER TABLE gateway_targets ADD COLUMN default_concurrency INTEGER NOT NULL DEFAULT 1`},
+		{"gateway_targets", "default_priority", `ALTER TABLE gateway_targets ADD COLUMN default_priority INTEGER NOT NULL DEFAULT 0`},
+		{"gateway_targets", "rate_multiplier", `ALTER TABLE gateway_targets ADD COLUMN rate_multiplier REAL NOT NULL DEFAULT 1`},
+		{"import_operations", "error_code", `ALTER TABLE import_operations ADD COLUMN error_code TEXT NOT NULL DEFAULT ''`},
+		{"import_operations", "outcome", `ALTER TABLE import_operations ADD COLUMN outcome TEXT NOT NULL DEFAULT ''`},
+		{"import_operations", "retryable", `ALTER TABLE import_operations ADD COLUMN retryable INTEGER NOT NULL DEFAULT 0`},
+		{"import_operations", "http_status", `ALTER TABLE import_operations ADD COLUMN http_status INTEGER NOT NULL DEFAULT 0`},
+		{"import_operations", "acquisition_price", `ALTER TABLE import_operations ADD COLUMN acquisition_price TEXT NOT NULL DEFAULT ''`},
 	}
 	for _, column := range columns {
-		if err := ensureGatewayTargetColumn(tx, column.name, column.ddl); err != nil {
+		if err := ensureColumn(tx, column.table, column.name, column.ddl); err != nil {
 			return err
 		}
 	}
@@ -354,8 +386,8 @@ func (s *Store) migrate(ctx context.Context) error {
 	return nil
 }
 
-func ensureGatewayTargetColumn(tx *sql.Tx, name, ddl string) error {
-	rows, err := tx.Query(`PRAGMA table_info(gateway_targets)`)
+func ensureColumn(tx *sql.Tx, table, name, ddl string) error {
+	rows, err := tx.Query(`PRAGMA table_info(` + table + `)`)
 	if err != nil {
 		return err
 	}
@@ -379,7 +411,7 @@ func ensureGatewayTargetColumn(tx *sql.Tx, name, ddl string) error {
 		return nil
 	}
 	if _, err := tx.Exec(ddl); err != nil {
-		return fmt.Errorf("add gateway target column %s: %w", name, err)
+		return fmt.Errorf("add %s column %s: %w", table, name, err)
 	}
 	return nil
 }
@@ -530,6 +562,19 @@ func (s *Store) UpsertDeploymentBinding(ctx context.Context, binding DeploymentB
 		return DeploymentBinding{}, fmt.Errorf("upsert deployment binding: %w", err)
 	}
 	return s.deploymentBinding(ctx, binding.SubscriptionID, binding.TargetID)
+}
+
+func (s *Store) RebindDeploymentBinding(ctx context.Context, subscriptionID string, targetID int64, expectedRemoteID, newRemoteID string) (DeploymentBinding, error) {
+	now := time.Now().UTC()
+	result, err := s.db.ExecContext(ctx, `UPDATE deployment_bindings SET remote_account_id=?, desired_state='active', observed_state='active', last_error='', last_synced_at=?, updated_at=? WHERE subscription_id=? AND target_id=? AND remote_account_id=? AND desired_state='active'`,
+		newRemoteID, formatTime(now), formatTime(now), subscriptionID, targetID, expectedRemoteID)
+	if err != nil {
+		return DeploymentBinding{}, fmt.Errorf("rebind deployment binding: %w", err)
+	}
+	if count, _ := result.RowsAffected(); count != 1 {
+		return DeploymentBinding{}, errors.New("deployment binding changed during reconciliation")
+	}
+	return s.deploymentBinding(ctx, subscriptionID, targetID)
 }
 
 func (s *Store) ListDeploymentBindings(ctx context.Context, subscriptionID string) ([]DeploymentBinding, error) {

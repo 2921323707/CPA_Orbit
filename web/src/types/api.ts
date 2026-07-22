@@ -305,8 +305,14 @@ export interface ImportCommitOptions {
 }
 
 export interface ImportCommitResponse {
-  subscription: Subscription
+  operationId: string
+  subscriptionId: string
+  subscription?: Subscription
   deployment: DeploymentBinding | null
+  outcome: 'succeeded' | 'failed' | 'uncertain' | string
+  retryable: boolean
+  httpStatus: number
+  archived: boolean
   idempotent: boolean
 }
 

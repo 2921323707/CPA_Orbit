@@ -84,6 +84,7 @@ type Manager struct {
 	settings    *config.Store
 	items       map[string]model.Subscription
 	checks      map[string]model.Connectivity
+	checksMu    sync.Mutex
 	importMu    sync.Mutex
 	cpa         *cpagateway.Client
 }
@@ -286,17 +287,24 @@ func (m *Manager) folders() []string {
 }
 
 func subscriptionCategory(item model.Subscription) string {
-	quota := item.Connectivity.Quota
-	if quota != nil && quota.FiveHour != nil && quota.FiveHour.RemainingPercent != nil && *quota.FiveHour.RemainingPercent <= 0 {
-		if quota.SevenDay == nil || quota.SevenDay.RemainingPercent == nil || *quota.SevenDay.RemainingPercent > 0 {
-			return "normal"
+	status := strings.ToLower(strings.TrimSpace(item.Connectivity.Status))
+	if status == "quota_exhausted" {
+		quota := item.Connectivity.Quota
+		if quota != nil && quota.FiveHour != nil && quota.FiveHour.RemainingPercent != nil && *quota.FiveHour.RemainingPercent <= 0 {
+			if quota.SevenDay == nil || quota.SevenDay.RemainingPercent == nil || *quota.SevenDay.RemainingPercent > 0 {
+				return "normal"
+			}
 		}
 	}
-	if item.Connectivity.Status == "ok" {
+	if status == "ok" || status == "active" || status == "healthy" || status == "connected" {
 		return "normal"
 	}
-	status := strings.ToLower(strings.TrimSpace(item.Connectivity.Status))
-	if status == "" || status == "unknown" || status == "pending" {
+	switch status {
+	case "", "unknown", "pending", "sub2api_unavailable", "cpa_unavailable", "timeout", "upstream_error":
+		return "pending"
+	}
+	switch strings.ToLower(strings.TrimSpace(item.Connectivity.ReasonCode)) {
+	case "account_test_unavailable", "account_poll_failed", "auth_files_unavailable", "usage_timeout", "management_api_error", "management_response_invalid", "binding_reconciliation_required":
 		return "pending"
 	}
 	return "error"
@@ -450,7 +458,9 @@ func (m *Manager) GatewayCredential(id string) (gateways.Credential, error) {
 
 func (m *Manager) CPAAdapter() gateways.Adapter { return m.cpa }
 
-func (m *Manager) SaveConnectivity(id string, check model.Connectivity) { m.saveCheck(id, check) }
+func (m *Manager) SaveConnectivity(id string, check model.Connectivity) error {
+	return m.saveCheck(id, check)
+}
 
 func (m *Manager) Delete(id string) error {
 	sub, ok := m.Get(id)
@@ -496,7 +506,9 @@ func parseUsageQuota(body string, checkedAt time.Time) (*model.UsageQuota, error
 	return cpagateway.ParseUsageQuota(body, checkedAt)
 }
 
-func (m *Manager) saveCheck(id string, check model.Connectivity) {
+func (m *Manager) saveCheck(id string, check model.Connectivity) error {
+	m.checksMu.Lock()
+	defer m.checksMu.Unlock()
 	m.mu.Lock()
 	m.checks[id] = check
 	if item, ok := m.items[id]; ok {
@@ -508,7 +520,7 @@ func (m *Manager) saveCheck(id string, check model.Connectivity) {
 		copyChecks[key] = value
 	}
 	m.mu.Unlock()
-	_ = storage.SaveJSON(m.checksPath, copyChecks)
+	return storage.SaveJSON(m.checksPath, copyChecks)
 }
 
 func modelsEndpoint(base string) string {
@@ -594,6 +606,9 @@ func gatewayCredential(sub model.Subscription, data []byte) gateways.Credential 
 	credential := gateways.Credential{SubscriptionID: sub.ID, Data: data, Email: sub.Email, AccountID: sub.AccountID, ChatGPTAccountID: sub.ChatGPTAccountID, Provider: firstNonEmpty(sub.Provider, sub.Type)}
 	if analysis, err := AnalyzeAuthJSON(data); err == nil {
 		credential.LogicalIdentity = analysis.Identity.LogicalID
+		credential.CredentialSet = analysis.Identity.CredentialSet
+		credential.ChatGPTUserID = analysis.Identity.CredentialSet["chatgpt_user_id"]
+		credential.AgentRuntimeID = analysis.Identity.CredentialSet["agent_runtime_id"]
 	}
 	return credential
 }

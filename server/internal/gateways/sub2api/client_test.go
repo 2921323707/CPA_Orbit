@@ -138,6 +138,64 @@ func TestUsageRangeUsesSub2APIDateFormatAndUnwrapsPagination(t *testing.T) {
 	}
 }
 
+func TestInspectParsesSSEAccountTestAndReadsQuota(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/admin/accounts/42/test":
+			if !strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+				t.Fatalf("Accept=%q", r.Header.Get("Accept"))
+			}
+			w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+			fmt.Fprint(w, "data: {\"type\":\"test_start\",\"model\":\"gpt-5.4\"}\r\n\r\ndata: {\"type\":\"content\",\"text\":\"Hi\"}\r\n\r\ndata: {\"type\":\"test_complete\",\"success\":true}\r\n\r\n")
+		case "/api/v1/admin/openai/accounts/42/quota":
+			fmt.Fprint(w, `{"account_id":"acct","plan_type":"plus","rate_limit":{"allowed":true,"limit_reached":false,"primary_window":{"used_percent":25,"limit_window_seconds":18000}},"fetched_at":1780000000}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := NewClient(func() Config { return Config{BaseURL: server.URL, AdminKey: "key"} })
+	result, err := client.Inspect(context.Background(), gateways.BindingRef{ExternalID: "42"}, gateways.Credential{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Connectivity.Status != "ok" || result.Connectivity.LatencyMS < 0 || result.Connectivity.Quota == nil || result.Connectivity.Quota.PlanType != "plus" {
+		t.Fatalf("unexpected SSE inspect result: %+v", result)
+	}
+}
+
+func TestInspectClassifiesSSEAccountNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"type\":\"error\",\"error\":\"Account not found\"}\n\n")
+	}))
+	defer server.Close()
+	client := NewClient(func() Config { return Config{BaseURL: server.URL, AdminKey: "key"} })
+	result, err := client.Inspect(context.Background(), gateways.BindingRef{ExternalID: "42"}, gateways.Credential{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Connectivity.Status != "not_found" || result.Connectivity.ReasonCode != "sub2api_account_not_found" {
+		t.Fatalf("unexpected missing result: %+v", result)
+	}
+}
+
+func TestInspectSanitizesSSETestFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"type\":\"error\",\"error\":\"secret-access upstream failure\"}\n\n")
+	}))
+	defer server.Close()
+	client := NewClient(func() Config { return Config{BaseURL: server.URL, AdminKey: "key"} })
+	result, err := client.Inspect(context.Background(), gateways.BindingRef{ExternalID: "42"}, gateways.Credential{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Connectivity.Status != "error" || strings.Contains(result.Connectivity.Error, "secret-access") {
+		t.Fatalf("unsafe result: %+v", result)
+	}
+}
+
 func TestInspectTestsAccountAndReadsQuota(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -158,6 +216,38 @@ func TestInspectTestsAccountAndReadsQuota(t *testing.T) {
 	quota := result.Connectivity.Quota
 	if result.Connectivity.Status != "ok" || result.Connectivity.LatencyMS != 17 || quota == nil || quota.PlanType != "plus" || quota.FiveHour == nil || *quota.FiveHour.RemainingPercent != 75 {
 		t.Fatalf("unexpected inspect result: %+v", result)
+	}
+}
+
+func TestReconcileBindingUsesOrbitMarkerAndStrongIdentity(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"code":0,"data":{"items":[{"id":9,"platform":"openai","type":"oauth","credentials":{"orbit_subscription_id":"sub-1","chatgpt_account_id":"workspace-1","chatgpt_user_id":"user-1","email":"person@example.com"}}],"total":1,"page":1,"page_size":500,"pages":1}}`)
+	}))
+	defer server.Close()
+	client := NewClient(func() Config { return Config{BaseURL: server.URL, AdminKey: "key"} })
+	result, err := client.ReconcileBinding(context.Background(), gateways.BindingRef{ExternalID: "8", Managed: true}, gateways.Credential{
+		SubscriptionID: "sub-1", Provider: "openai", CredentialSet: map[string]string{"chatgpt_account_id": "workspace-1", "chatgpt_user_id": "user-1", "email": "person@example.com"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != "rebound" || result.Binding.ExternalID != "9" {
+		t.Fatalf("unexpected reconciliation: %+v", result)
+	}
+}
+
+func TestReconcileBindingRejectsEmailOnlyMatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"code":0,"data":{"items":[{"id":9,"platform":"openai","type":"oauth","credentials":{"orbit_subscription_id":"sub-1","email":"person@example.com"}}],"total":1,"page":1,"page_size":500,"pages":1}}`)
+	}))
+	defer server.Close()
+	client := NewClient(func() Config { return Config{BaseURL: server.URL, AdminKey: "key"} })
+	result, err := client.ReconcileBinding(context.Background(), gateways.BindingRef{ExternalID: "8", Managed: true}, gateways.Credential{SubscriptionID: "sub-1", Provider: "openai", CredentialSet: map[string]string{"email": "person@example.com"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Outcome != "missing" || result.Binding.ExternalID != "8" {
+		t.Fatalf("email-only match was accepted: %+v", result)
 	}
 }
 

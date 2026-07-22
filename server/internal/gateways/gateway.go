@@ -74,7 +74,10 @@ type Credential struct {
 	Email            string
 	AccountID        string
 	ChatGPTAccountID string
+	ChatGPTUserID    string
+	AgentRuntimeID   string
 	Provider         string
+	CredentialSet    map[string]string
 	LogicalIdentity  string
 }
 
@@ -96,10 +99,36 @@ type DeployOptions struct {
 	RateMultiplier float64
 }
 
+type DeploymentOutcome string
+
+const (
+	DeploymentFailed    DeploymentOutcome = "failed"
+	DeploymentUncertain DeploymentOutcome = "uncertain"
+)
+
+// DeploymentError is safe to expose to API callers. Adapters must never put
+// upstream response bodies, credentials, or management keys in Message.
+type DeploymentError struct {
+	Code       string            `json:"code"`
+	Message    string            `json:"message"`
+	Outcome    DeploymentOutcome `json:"outcome"`
+	Retryable  bool              `json:"retryable"`
+	HTTPStatus int               `json:"httpStatus,omitempty"`
+}
+
+func (e *DeploymentError) Error() string {
+	if e == nil {
+		return "deployment failed"
+	}
+	return e.Message
+}
+
 type DeploymentResult struct {
-	Binding BindingRef `json:"binding"`
-	Status  string     `json:"status"`
-	Message string     `json:"message,omitempty"`
+	Binding        BindingRef `json:"binding"`
+	Status         string     `json:"status"`
+	Message        string     `json:"message,omitempty"`
+	OperationID    string     `json:"operationId,omitempty"`
+	SubscriptionID string     `json:"subscriptionId,omitempty"`
 }
 
 type Health struct {
@@ -111,6 +140,15 @@ type Health struct {
 
 type InspectResult struct {
 	Connectivity model.Connectivity `json:"connectivity"`
+}
+
+type BindingReconciliation struct {
+	Outcome string
+	Binding BindingRef
+}
+
+type BindingReconciler interface {
+	ReconcileBinding(context.Context, BindingRef, Credential) (BindingReconciliation, error)
 }
 
 // Adapter is the narrow contract used by deployment orchestration. Adapters own

@@ -58,17 +58,27 @@ type CodexSessionImportResult struct {
 	Errors   []CodexSessionImportMessage `json:"errors,omitempty"`
 }
 
+type AccountCredentials struct {
+	AccountID           string `json:"account_id,omitempty"`
+	ChatGPTAccountID    string `json:"chatgpt_account_id,omitempty"`
+	ChatGPTUserID       string `json:"chatgpt_user_id,omitempty"`
+	AgentRuntimeID      string `json:"agent_runtime_id,omitempty"`
+	Email               string `json:"email,omitempty"`
+	OrbitSubscriptionID string `json:"orbit_subscription_id,omitempty"`
+}
+
 type Account struct {
-	ID          int64           `json:"id"`
-	Name        string          `json:"name"`
-	Notes       string          `json:"notes,omitempty"`
-	Platform    string          `json:"platform"`
-	Type        string          `json:"type"`
-	Status      string          `json:"status"`
-	Email       string          `json:"email,omitempty"`
-	Concurrency int             `json:"concurrency,omitempty"`
-	Priority    int             `json:"priority,omitempty"`
-	Groups      json.RawMessage `json:"groups,omitempty"`
+	ID          int64              `json:"id"`
+	Name        string             `json:"name"`
+	Notes       string             `json:"notes,omitempty"`
+	Platform    string             `json:"platform"`
+	Type        string             `json:"type"`
+	Status      string             `json:"status"`
+	Email       string             `json:"email,omitempty"`
+	Credentials AccountCredentials `json:"credentials,omitempty"`
+	Concurrency int                `json:"concurrency,omitempty"`
+	Priority    int                `json:"priority,omitempty"`
+	Groups      json.RawMessage    `json:"groups,omitempty"`
 }
 
 type AccountPage struct {

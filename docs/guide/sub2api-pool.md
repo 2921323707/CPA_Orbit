@@ -18,17 +18,22 @@ CPA Orbit treats the subscription archive, runtime gateways, and usage history a
 | Usage details | Sub2API | Authoritative request log and billing detail |
 | Usage aggregates | CPA Orbit `control-plane.db` | Fifteen-minute Token/cost continuity, retained for up to 90 days |
 
-CPA and Sub2API are independent configurable local companions. Each compatible Auth JSON must be assigned explicitly to exactly one target; Orbit never performs automatic fallback or request-by-request traffic switching. Keeping the same refresh credential active in both gateways could cause competing rotations, so moving a credential requires an explicit detach/deploy action with a visible reconciliation state.
+CPA and Sub2API are independent configurable companions. In the two-stage import flow, each compatible Auth JSON is assigned explicitly to exactly one target; a failed or uncertain commit remains on that target and never triggers cross-target fallback or request-by-request traffic switching. Keeping the same refresh credential active in both gateways could cause competing rotations, so moving a credential requires an explicit detach/deploy action with a visible reconciliation state.
+
+::: warning External gateway required
+CPA Orbit does not include, install, or download Sub2API. Run Sub2API separately—for example with its official Docker deployment—and keep its management endpoint on a trusted interface. Official CPA Orbit packages also do not embed CLIProxyAPI.
+:::
 
 ## Configure a Sub2API target
 
-1. Start Sub2API and generate an administrator API key.
-2. Open **Settings → Gateways** (`/settings?section=gateways`) and configure a local Sub2API companion.
-3. Enter the management base URL and admin key. The standard local Sub2API endpoint `http://127.0.0.1:8080` can be used directly; Orbit uses its own control port at `8090`.
-4. Optionally set group IDs, account concurrency, scheduling priority, and cost multiplier.
-5. Save the target and run **Check connection**. Import still requires selecting this target explicitly.
+1. Install and start Sub2API separately. For a local Docker deployment that publishes port `8080`, confirm `http://127.0.0.1:8080` opens in the browser.
+2. Sign in to the Sub2API administrator interface, open **System Settings → Admin API Key**, and create a key. Copy it immediately; the full value is shown only when generated.
+3. Open **CPA Orbit → Settings → Gateways** (`/settings?section=gateways`), select **Add gateway**, and choose **Sub2API**.
+4. Enter the management URL `http://127.0.0.1:8080` and the Admin API Key. Do not append `/api/v1` or `/api/v1/admin`; Orbit builds the administrator API path itself.
+5. Optionally set group IDs, account concurrency, scheduling priority, and cost multiplier. Enable the target and select the primary marker only if it is your preferred target.
+6. Save the target and run **Check connection**. A successful check confirms the endpoint and key; importing a credential still requires selecting this target explicitly.
 
-Remote targets require an explicit opt-in and HTTPS. The admin key is write-only: it is stored locally and never returned by the public API or shown in operation logs.
+The primary marker is metadata for preferred/default-compatible actions, not automatic failover. CPA is used only when the operator explicitly deploys or migrates a credential to it. Remote targets require an explicit opt-in and HTTPS. The admin key is write-only: it is stored locally and never returned by the public API or shown in operation logs.
 
 Configure the local CPA companion from **Settings → Gateways** as well; its connection, authorization directory, and synchronization settings remain local. The generic Sub2API contract is configured alongside CPA, and each target's admin key is write-only.
 
@@ -40,7 +45,7 @@ In **Subscription files**, select an Auth JSON and choose exactly one compatible
 local safe preflight → provider/date archive → explicit deploy to CPA or Sub2API
 ```
 
-The archive is retained if deployment fails. A pending or uncertain remote result is shown for reconciliation; Orbit does not silently retry against another target or create a second assignment. Existing archives can be assigned later from their detail drawer.
+The archive is retained if deployment fails. A definite failure and an uncertain transport result are reported separately with a sanitized operation code, target, HTTP status, and retryability. When retry is safe, Orbit resumes the same durable operation against the same target without creating a second archive; it never silently switches targets or creates a second active assignment. Existing archives can be assigned later from their detail drawer.
 
 ## Ownership and safe deletion
 
@@ -50,9 +55,11 @@ The archive is retained if deployment fails. A pending or uncertain remote resul
 
 ## Telemetry
 
-Account status and quota checks are separate from offer monitoring. They poll every five minutes by default; set the interval to `0` to disable scheduled polling, and use an explicit manual check when needed. A failed or uncertain check is marked accordingly without changing the credential assignment.
+Account status and quota checks are separate from offer monitoring. They poll every five minutes by default; set the interval to `0` to disable scheduled polling, and use an explicit manual check when needed. Orbit supports Sub2API's current SSE account-test stream and distinguishes an authoritative unhealthy account from an unavailable inspection attempt: transient inspection failures remain pending/reconcilable instead of being mislabeled as account errors, and they never change the credential assignment.
 
-Raw request logs remain in Sub2API. Orbit stores normalized fifteen-minute aggregates containing request counts, successes/failures, input/output/cache tokens, duration, first-token latency, and cost. Aggregates older than 90 days are deleted automatically.
+If a managed Sub2API account is recreated with a new remote ID, Orbit automatically rebinds only when the old ID is definitively absent and exactly one account matches both the `orbit_subscription_id` provenance marker and strong credential identity. Zero, multiple, email-only, or contradictory matches are never guessed. Reconciliation does not re-upload the credential or delete candidate accounts.
+
+Select the filename in the **Subscription file** column to open its detail drawer; status/quota testing, deployment, migration, detach, and CPA synchronization actions live in that drawer. Raw request logs remain in Sub2API. Orbit stores normalized fifteen-minute aggregates containing request counts, successes/failures, input/output/cache tokens, duration, first-token latency, and cost. Aggregates older than 90 days are deleted automatically.
 
 ::: warning Provider terms and account risk
 Subscription-to-gateway conversion can conflict with upstream provider terms and can lead to account suspension or service interruption. Review the applicable agreements and use the integration only where authorized. Sub2API itself publishes the same risk warning in its project documentation.

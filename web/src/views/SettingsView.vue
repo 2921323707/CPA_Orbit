@@ -68,7 +68,7 @@ const testingGatewayId = ref<number | null>(null)
 const savingGateway = ref(false)
 const gatewayFormOpen = ref(false)
 const gatewayValidationError = ref('')
-const gatewayForm = reactive({ id: 0, kind: 'sub2api' as 'sub2api' | 'cpa', name: 'Primary Sub2API', baseUrl: 'http://127.0.0.1:8080', adminKey: '', enabled: true, primary: true, allowRemote: false, groupIds: '', concurrency: 2, priority: 0, rateMultiplier: 1 })
+const gatewayForm = reactive({ id: 0, kind: 'sub2api' as 'sub2api' | 'cpa', name: 'Local Sub2API', baseUrl: 'http://127.0.0.1:8080', adminKey: '', enabled: true, primary: true, allowRemote: false, groupIds: '', concurrency: 2, priority: 0, rateMultiplier: 1 })
 
 function setSection(section: SettingsSection) {
   void router.replace({ path: '/settings', query: section === 'monitor' ? {} : { section } })
@@ -156,7 +156,7 @@ async function loadGateways() {
 }
 
 function newGatewayTarget() {
-  Object.assign(gatewayForm, { id: 0, kind: 'sub2api', name: 'Primary Sub2API', baseUrl: 'http://127.0.0.1:8080', adminKey: '', enabled: true, primary: true, allowRemote: false, groupIds: '', concurrency: 2, priority: 0, rateMultiplier: 1 })
+  Object.assign(gatewayForm, { id: 0, kind: 'sub2api', name: 'Local Sub2API', baseUrl: 'http://127.0.0.1:8080', adminKey: '', enabled: true, primary: true, allowRemote: false, groupIds: '', concurrency: 2, priority: 0, rateMultiplier: 1 })
   gatewayValidationError.value = ''
   gatewayFormOpen.value = true
 }
@@ -262,14 +262,14 @@ onMounted(load)
       <div v-else-if="activeSection === 'gateways'" class="page-stack settings-content gateway-settings">
         <section class="panel settings-section gateway-settings__intro">
           <div class="panel__header panel__header--wrap">
-            <div><h2>网关配置</h2><p>维护 Sub2API 主号池与 CPA 回退目标。目标、凭据状态和健康记录继续保存在现有网关存储中。</p></div>
+            <div><h2>网关配置</h2><p>连接独立运行的 Sub2API 或 CPA 网关目标。CPA Orbit 不内置 Sub2API；主网关标记不会触发跨目标自动故障转移。</p></div>
             <button class="button button--primary" type="button" @click="newGatewayTarget"><Plus :size="16" />添加网关</button>
           </div>
         </section>
         <LoadingState v-if="gatewayLoading && !gatewayOverview" label="正在加载网关配置…" />
         <ErrorState v-else-if="gatewayError && !gatewayOverview" :message="gatewayError" @retry="loadGateways" />
         <section v-else class="gateway-rack gateway-rack--settings" aria-label="网关目标列表">
-          <div class="section-heading"><div><span class="eyebrow">GATEWAY TARGETS</span><h2>主备网关</h2></div><span>{{ gatewayOverview?.targets.length || 0 }} 个目标</span></div>
+          <div class="section-heading"><div><span class="eyebrow">GATEWAY TARGETS</span><h2>已配置网关</h2></div><span>{{ gatewayOverview?.targets.length || 0 }} 个目标</span></div>
           <div v-if="gatewayOverview?.targets.length" class="gateway-grid"><GatewayStatusCard v-for="item in gatewayOverview.targets" :key="item.target.id" :status="item" :testing="testingGatewayId === item.target.id" @test="testGatewayTarget" @edit="editGatewayTarget" /></div>
           <div v-else class="operations-empty"><ServerCog :size="28" /><strong>尚未配置网关</strong><span>添加 Sub2API 或 CPA 目标后，可在这里编辑配置并检查连接健康。</span></div>
           <div v-if="gatewayError" class="inline-alert inline-alert--warning gateway-settings__warning"><span>{{ gatewayError }}</span><button class="button button--ghost button--small" type="button" @click="loadGateways">重试</button></div>
@@ -336,17 +336,17 @@ onMounted(load)
         <div class="gateway-form__head"><div><span class="eyebrow">TARGET PROFILE</span><h2>{{ gatewayForm.id ? '编辑网关' : '添加网关' }}</h2></div><button class="icon-button" type="button" aria-label="关闭" @click="gatewayFormOpen = false"><X :size="19" /></button></div>
         <div v-if="gatewayValidationError" class="inline-alert inline-alert--warning gateway-form__validation" role="alert">{{ gatewayValidationError }}</div>
         <div class="form-grid">
-          <label class="field"><span>网关类型</span><select v-model="gatewayForm.kind" :disabled="gatewayForm.id > 0"><option value="sub2api">Sub2API · 主号池</option><option value="cpa">CPA · 轻量备份</option></select></label>
+          <label class="field"><span>网关类型</span><select v-model="gatewayForm.kind" :disabled="gatewayForm.id > 0"><option value="sub2api">Sub2API</option><option value="cpa">CPA / CLIProxyAPI</option></select></label>
           <label class="field"><span>显示名称</span><input v-model="gatewayForm.name" required /></label>
-          <label class="field field--wide"><span>网关管理地址</span><input v-model="gatewayForm.baseUrl" type="url" required placeholder="http://127.0.0.1:8080" /><small>这是目标网关自己的管理入口；远程地址需显式允许并使用 HTTPS。</small></label>
-          <label v-if="gatewayForm.kind === 'sub2api'" class="field field--wide"><span>管理密钥 <small>{{ gatewayForm.id ? '留空保持原密钥' : '写入后不再显示' }}</small></span><input v-model="gatewayForm.adminKey" type="password" autocomplete="new-password" :required="!gatewayForm.id" /></label>
-          <div v-else class="field field--wide gateway-form__legacy-note"><span>CPA 连接沿用“设置 → CPA 同步”中的管理密钥与授权目录；这里仅控制主备角色和启停。</span></div>
+          <label class="field field--wide"><span>网关管理地址</span><input v-model="gatewayForm.baseUrl" type="url" required placeholder="http://127.0.0.1:8080" /><small>{{ gatewayForm.kind === 'sub2api' ? 'Sub2API 需单独启动；本机 Docker 常用 http://127.0.0.1:8080，地址后不要添加 /api/v1/admin。' : '这是目标网关自己的管理入口。' }}远程地址需显式允许并使用 HTTPS。</small></label>
+          <label v-if="gatewayForm.kind === 'sub2api'" class="field field--wide"><span>管理密钥 <small>{{ gatewayForm.id ? '留空保持原密钥' : '写入后不再显示' }}</small></span><input v-model="gatewayForm.adminKey" type="password" autocomplete="new-password" :required="!gatewayForm.id" /><small>请在 Sub2API 后台的“系统设置 → Admin API Key”中创建；完整密钥只显示一次。</small></label>
+          <div v-else class="field field--wide gateway-form__legacy-note"><span>CPA 连接沿用“设置 → CPA 同步”中的管理密钥与授权目录；这里控制目标标记与启停，不代表自动故障转移。</span></div>
           <label class="field"><span>默认分组 ID</span><input v-model="gatewayForm.groupIds" placeholder="3, 5" /><small>可留空，或填写以逗号分隔的正整数。</small></label>
           <label class="field"><span>账号并发</span><input v-model.number="gatewayForm.concurrency" type="number" min="1" max="1000" step="1" required /></label>
           <label class="field"><span>调度优先级</span><input v-model.number="gatewayForm.priority" type="number" min="-1000" max="1000" step="1" required /></label>
           <label class="field"><span>成本倍率</span><input v-model.number="gatewayForm.rateMultiplier" type="number" min="0.01" max="1000" step="0.01" required /></label>
         </div>
-        <div class="gateway-form__switches"><label class="check-row"><input v-model="gatewayForm.enabled" class="switch" type="checkbox" /><span><strong>启用目标</strong><small>允许部署和健康检查。</small></span></label><label class="check-row"><input v-model="gatewayForm.primary" class="switch" type="checkbox" /><span><strong>设为主网关</strong><small>系统只保留一个主目标。</small></span></label><label class="check-row"><input v-model="gatewayForm.allowRemote" class="switch" type="checkbox" /><span><strong>允许远程地址</strong><small>仅 HTTPS，密钥随管理请求发送。</small></span></label></div>
+        <div class="gateway-form__switches"><label class="check-row"><input v-model="gatewayForm.enabled" class="switch" type="checkbox" /><span><strong>启用目标</strong><small>允许部署和健康检查。</small></span></label><label class="check-row"><input v-model="gatewayForm.primary" class="switch" type="checkbox" /><span><strong>设为主网关</strong><small>仅标记首选目标；部署失败时不会自动切换网关。</small></span></label><label class="check-row"><input v-model="gatewayForm.allowRemote" class="switch" type="checkbox" /><span><strong>允许远程地址</strong><small>仅 HTTPS，密钥随管理请求发送。</small></span></label></div>
         <div class="form-actions"><span class="security-note">管理密钥仅写入，不会从后端回显。</span><button class="button button--primary" type="submit" :disabled="savingGateway"><Save :size="16" />{{ savingGateway ? '保存中…' : '保存目标' }}</button></div>
       </form>
     </div>

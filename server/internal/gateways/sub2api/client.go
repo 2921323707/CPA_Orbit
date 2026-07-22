@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -21,6 +22,40 @@ const maxResponseBytes = 8 << 20
 
 type Client struct {
 	config func() Config
+}
+
+type clientError struct {
+	Kind       string
+	HTTPStatus int
+}
+
+func newClientError(kind string, status int) *clientError {
+	return &clientError{Kind: kind, HTTPStatus: status}
+}
+
+func (e *clientError) Error() string {
+	switch e.Kind {
+	case "account_not_found":
+		return "Sub2API account was not found"
+	case "account_test_failed":
+		return "Sub2API account test failed"
+	case "auth":
+		return "Sub2API authorization failed"
+	case "transport":
+		return "Sub2API request failed"
+	case "read":
+		return "read Sub2API response failed"
+	case "oversize":
+		return "Sub2API response exceeded the size limit"
+	default:
+		return "Sub2API returned an invalid response"
+	}
+}
+
+type accountTestEvent struct {
+	Type    string `json:"type"`
+	Success bool   `json:"success,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 func NewClient(configProvider func() Config) *Client {
@@ -92,27 +127,28 @@ func (c *Client) Deploy(ctx context.Context, credential gateways.Credential, opt
 	if err := c.do(ctx, http.MethodPost, "/accounts/import/codex-session", nil, request, &imported, true); err != nil {
 		return gateways.DeploymentResult{}, err
 	}
+	if imported.Total <= 0 || imported.Created < 0 || imported.Updated < 0 || imported.Skipped < 0 || imported.Failed < 0 || imported.Created+imported.Updated+imported.Skipped+imported.Failed != imported.Total || len(imported.Items) != imported.Total {
+		return gateways.DeploymentResult{}, importError("invalid_import_result", "Sub2API returned an invalid import result", false, 0)
+	}
 	accountID := int64(0)
 	action := ""
 	for _, item := range imported.Items {
-		if item.AccountID > 0 && item.Action != "failed" {
-			accountID, action = item.AccountID, item.Action
-			break
-		}
-	}
-	if accountID == 0 && lookupEmail != "" {
-		page, err := c.ListAccounts(ctx, 1, 20, lookupEmail)
-		if err == nil {
-			for _, account := range page.Items {
-				if strings.EqualFold(strings.TrimSpace(account.Email), strings.TrimSpace(lookupEmail)) || strings.EqualFold(strings.TrimSpace(account.Name), strings.TrimSpace(lookupEmail)) {
-					accountID = account.ID
-					break
-				}
+		switch item.Action {
+		case "created", "updated", "skipped":
+			if item.AccountID <= 0 || accountID != 0 {
+				return gateways.DeploymentResult{}, importError("invalid_import_result", "Sub2API returned an ambiguous import result", false, 0)
 			}
+			accountID, action = item.AccountID, item.Action
+		case "failed":
+			if item.AccountID != 0 {
+				return gateways.DeploymentResult{}, importError("import_failed", "Sub2API rejected the credential import", true, 0)
+			}
+		default:
+			return gateways.DeploymentResult{}, importError("invalid_import_result", "Sub2API returned an unknown import action", false, 0)
 		}
 	}
 	if imported.Failed > 0 || accountID <= 0 {
-		return gateways.DeploymentResult{}, fmt.Errorf("Sub2API import failed (%d failed, %d skipped)", imported.Failed, imported.Skipped)
+		return gateways.DeploymentResult{}, importError("import_failed", "Sub2API credential import failed", true, 0)
 	}
 	status := "deployed"
 	if action == "updated" {
@@ -220,15 +256,20 @@ func (c *Client) Inspect(ctx context.Context, binding gateways.BindingRef, _ gat
 	checkedAt := time.Now()
 	test, err := c.TestAccount(ctx, id)
 	if err != nil {
+		var safe *clientError
+		if errors.As(err, &safe) {
+			switch safe.Kind {
+			case "account_not_found":
+				return gateways.InspectResult{Connectivity: model.Connectivity{Status: "not_found", ReasonCode: "sub2api_account_not_found", HTTPStatus: safe.HTTPStatus, CheckedAt: checkedAt, Error: "Sub2API 账号不存在"}}, nil
+			case "account_test_failed":
+				return gateways.InspectResult{Connectivity: model.Connectivity{Status: "error", ReasonCode: "sub2api_account_test_failed", CheckedAt: checkedAt, Error: "Sub2API 账号连通性测试失败"}}, nil
+			case "auth":
+				return gateways.InspectResult{Connectivity: model.Connectivity{Status: "sub2api_unavailable", ReasonCode: "sub2api_auth_failed", HTTPStatus: safe.HTTPStatus, CheckedAt: checkedAt, Error: "Sub2API 管理密钥无效"}}, nil
+			}
+		}
 		return gateways.InspectResult{Connectivity: model.Connectivity{Status: "sub2api_unavailable", ReasonCode: "account_test_unavailable", CheckedAt: checkedAt, Error: "Sub2API 账号测试不可用"}}, nil
 	}
 	check := model.Connectivity{Status: "ok", LatencyMS: test.LatencyMS, CheckedAt: checkedAt}
-	if !test.Success {
-		check.Status = "error"
-		check.ReasonCode = "sub2api_account_test_failed"
-		check.Error = "Sub2API 账号连通性测试失败"
-		return gateways.InspectResult{Connectivity: check}, nil
-	}
 	quota, err := c.QueryOpenAIQuota(ctx, id)
 	if err == nil {
 		check.Quota = normalizeQuota(quota, checkedAt)
@@ -253,6 +294,62 @@ func (c *Client) Detach(ctx context.Context, binding gateways.BindingRef, _ gate
 	return c.do(ctx, http.MethodDelete, "/accounts/"+strconv.FormatInt(id, 10), nil, nil, &response, false)
 }
 
+func (c *Client) ReconcileBinding(ctx context.Context, binding gateways.BindingRef, credential gateways.Credential) (gateways.BindingReconciliation, error) {
+	oldID, err := parseAccountID(binding.ExternalID)
+	if err != nil {
+		return gateways.BindingReconciliation{}, err
+	}
+	page, err := c.ListAccounts(ctx, 1, 500, "")
+	if err != nil {
+		return gateways.BindingReconciliation{}, err
+	}
+	if page.Pages > 1 || page.Total > len(page.Items) {
+		return gateways.BindingReconciliation{Outcome: "ambiguous", Binding: binding}, nil
+	}
+	var matches []Account
+	for _, account := range page.Items {
+		if account.ID == oldID || !strings.EqualFold(account.Platform, credential.Provider) || !strings.EqualFold(account.Type, "oauth") {
+			continue
+		}
+		if strings.TrimSpace(account.Credentials.OrbitSubscriptionID) != credential.SubscriptionID {
+			continue
+		}
+		if credentialMatchesAccount(credential.CredentialSet, account.Credentials) {
+			matches = append(matches, account)
+		}
+	}
+	if len(matches) != 1 {
+		outcome := "missing"
+		if len(matches) > 1 {
+			outcome = "ambiguous"
+		}
+		return gateways.BindingReconciliation{Outcome: outcome, Binding: binding}, nil
+	}
+	binding.ExternalID = strconv.FormatInt(matches[0].ID, 10)
+	binding.ExternalRef = "account:" + binding.ExternalID
+	return gateways.BindingReconciliation{Outcome: "rebound", Binding: binding}, nil
+}
+
+func credentialMatchesAccount(values map[string]string, remote AccountCredentials) bool {
+	remoteValues := map[string]string{
+		"account_id": remote.AccountID, "chatgpt_account_id": remote.ChatGPTAccountID,
+		"chatgpt_user_id": remote.ChatGPTUserID, "agent_runtime_id": remote.AgentRuntimeID,
+	}
+	matched := false
+	for key, remoteValue := range remoteValues {
+		localValue := strings.ToLower(strings.TrimSpace(values[key]))
+		remoteValue = strings.ToLower(strings.TrimSpace(remoteValue))
+		if localValue == "" || remoteValue == "" {
+			continue
+		}
+		if localValue != remoteValue {
+			return false
+		}
+		matched = true
+	}
+	return matched
+}
+
 func (c *Client) ListAccounts(ctx context.Context, page, pageSize int, search string) (AccountPage, error) {
 	if page < 1 {
 		page = 1
@@ -270,9 +367,92 @@ func (c *Client) ListAccounts(ctx context.Context, page, pageSize int, search st
 }
 
 func (c *Client) TestAccount(ctx context.Context, id int64) (AccountTestResult, error) {
+	started := time.Now()
+	contentType, data, err := c.doRaw(ctx, http.MethodPost, "/accounts/"+strconv.FormatInt(id, 10)+"/test", nil, map[string]any{}, false, "application/json, text/event-stream")
+	latency := time.Since(started).Milliseconds()
+	if err != nil {
+		return AccountTestResult{}, err
+	}
+	mediaType := "application/json"
+	if strings.TrimSpace(contentType) != "" {
+		parsedType, _, parseErr := mime.ParseMediaType(contentType)
+		if parseErr != nil {
+			return AccountTestResult{}, newClientError("invalid_response", 0)
+		}
+		mediaType = parsedType
+	}
 	var result AccountTestResult
-	err := c.do(ctx, http.MethodPost, "/accounts/"+strconv.FormatInt(id, 10)+"/test", nil, map[string]any{}, &result, false)
-	return result, err
+	switch strings.ToLower(mediaType) {
+	case "text/event-stream":
+		result, err = parseAccountTestSSE(data)
+	case "application/json", "text/json", "":
+		err = decodeResponse(data, &result)
+	case "text/plain":
+		if !json.Valid(bytes.TrimSpace(data)) {
+			err = newClientError("invalid_response", 0)
+		} else {
+			err = decodeResponse(data, &result)
+		}
+	default:
+		err = newClientError("invalid_response", 0)
+	}
+	if err != nil {
+		return AccountTestResult{}, err
+	}
+	if result.LatencyMS <= 0 {
+		result.LatencyMS = latency
+	}
+	if !result.Success {
+		return result, newClientError("account_test_failed", 0)
+	}
+	return result, nil
+}
+
+func parseAccountTestSSE(data []byte) (AccountTestResult, error) {
+	normalized := bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
+	normalized = bytes.ReplaceAll(normalized, []byte("\r"), []byte("\n"))
+	terminal := false
+	for _, record := range bytes.Split(normalized, []byte("\n\n")) {
+		var payloadLines [][]byte
+		for _, line := range bytes.Split(record, []byte("\n")) {
+			if len(line) == 0 || line[0] == ':' {
+				continue
+			}
+			if bytes.HasPrefix(line, []byte("data:")) {
+				value := line[len("data:"):]
+				if len(value) > 0 && value[0] == ' ' {
+					value = value[1:]
+				}
+				payloadLines = append(payloadLines, value)
+			}
+		}
+		if len(payloadLines) == 0 {
+			continue
+		}
+		var event accountTestEvent
+		if err := json.Unmarshal(bytes.Join(payloadLines, []byte("\n")), &event); err != nil {
+			return AccountTestResult{}, newClientError("invalid_response", http.StatusBadGateway)
+		}
+		switch strings.ToLower(strings.TrimSpace(event.Type)) {
+		case "test_complete":
+			if terminal || !event.Success {
+				return AccountTestResult{}, newClientError("invalid_response", http.StatusBadGateway)
+			}
+			terminal = true
+		case "error":
+			if terminal {
+				return AccountTestResult{}, newClientError("invalid_response", http.StatusBadGateway)
+			}
+			if strings.EqualFold(strings.Join(strings.Fields(event.Error), " "), "Account not found") {
+				return AccountTestResult{}, newClientError("account_not_found", http.StatusNotFound)
+			}
+			return AccountTestResult{}, newClientError("account_test_failed", 0)
+		}
+	}
+	if !terminal {
+		return AccountTestResult{}, newClientError("invalid_response", http.StatusBadGateway)
+	}
+	return AccountTestResult{Success: true}, nil
 }
 
 func (c *Client) QueryOpenAIQuota(ctx context.Context, id int64) (OpenAIQuotaUsage, error) {
@@ -328,22 +508,30 @@ func (c *Client) UsageRange(ctx context.Context, page, pageSize int, from, to ti
 }
 
 func (c *Client) do(ctx context.Context, method, path string, query url.Values, requestBody, responseBody any, importRequest bool) error {
+	_, data, err := c.doRaw(ctx, method, path, query, requestBody, importRequest, "application/json")
+	if err != nil {
+		return err
+	}
+	return decodeResponse(data, responseBody)
+}
+
+func (c *Client) doRaw(ctx context.Context, method, path string, query url.Values, requestBody any, importRequest bool, accept string) (string, []byte, error) {
 	cfg := c.config()
 	endpoint, err := adminEndpoint(cfg.BaseURL, path, query)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 	var body io.Reader
 	if requestBody != nil {
 		encoded, err := json.Marshal(requestBody)
 		if err != nil {
-			return fmt.Errorf("encode Sub2API request: %w", err)
+			return "", nil, fmt.Errorf("encode Sub2API request: %w", err)
 		}
 		body = bytes.NewReader(encoded)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
 	if err != nil {
-		return errors.New("build Sub2API request failed")
+		return "", nil, errors.New("build Sub2API request failed")
 	}
 	if strings.TrimSpace(cfg.AdminKey) != "" {
 		req.Header.Set("x-api-key", cfg.AdminKey)
@@ -351,7 +539,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	if strings.TrimSpace(cfg.BearerToken) != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.BearerToken)
 	}
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", accept)
 	if requestBody != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -368,20 +556,45 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	client := &http.Client{Timeout: timeout, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := client.Do(req)
 	if err != nil {
-		return errors.New("Sub2API request failed")
+		if importRequest {
+			return "", nil, &gateways.DeploymentError{Code: "sub2api_transport_uncertain", Message: "Sub2API import result is uncertain because the connection failed", Outcome: gateways.DeploymentUncertain, Retryable: true, HTTPStatus: http.StatusGatewayTimeout}
+		}
+		return "", nil, newClientError("transport", http.StatusGatewayTimeout)
 	}
 	defer resp.Body.Close()
 	limited := io.LimitReader(resp.Body, maxResponseBytes+1)
 	data, err := io.ReadAll(limited)
 	if err != nil {
-		return errors.New("read Sub2API response failed")
+		if importRequest {
+			return "", nil, &gateways.DeploymentError{Code: "sub2api_transport_uncertain", Message: "Sub2API import result is uncertain because the response was interrupted", Outcome: gateways.DeploymentUncertain, Retryable: true, HTTPStatus: http.StatusGatewayTimeout}
+		}
+		return "", nil, newClientError("read", http.StatusBadGateway)
 	}
 	if len(data) > maxResponseBytes {
-		return errors.New("Sub2API response exceeded the size limit")
+		return "", nil, newClientError("oversize", http.StatusBadGateway)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("Sub2API %s returned HTTP %d", safeOperation(path), resp.StatusCode)
+		if importRequest {
+			code, message, retryable := "sub2api_import_failed", "Sub2API rejected the credential import", false
+			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+				code, message = "sub2api_auth_failed", "Sub2API authorization failed"
+			} else if resp.StatusCode == http.StatusUnprocessableEntity {
+				code, message = "sub2api_import_invalid", "Sub2API rejected the credential format"
+			} else if resp.StatusCode >= 500 {
+				code, message, retryable = "sub2api_upstream_failed", "Sub2API is temporarily unavailable", true
+			}
+			return "", nil, &gateways.DeploymentError{Code: code, Message: message, Outcome: gateways.DeploymentFailed, Retryable: retryable, HTTPStatus: resp.StatusCode}
+		}
+		kind := "http"
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			kind = "auth"
+		}
+		return "", nil, newClientError(kind, resp.StatusCode)
 	}
+	return resp.Header.Get("Content-Type"), data, nil
+}
+
+func decodeResponse(data []byte, responseBody any) error {
 	if responseBody == nil || len(bytes.TrimSpace(data)) == 0 {
 		return nil
 	}
@@ -392,7 +605,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	}
 	if json.Unmarshal(data, &envelope) == nil && envelope.Code != nil {
 		if *envelope.Code != 0 {
-			return fmt.Errorf("Sub2API %s returned an application error", safeOperation(path))
+			return newClientError("application", http.StatusBadGateway)
 		}
 		if len(bytes.TrimSpace(envelope.Data)) == 0 || bytes.Equal(bytes.TrimSpace(envelope.Data), []byte("null")) {
 			return nil
@@ -400,7 +613,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 		data = envelope.Data
 	}
 	if err := json.Unmarshal(data, responseBody); err != nil {
-		return fmt.Errorf("decode Sub2API %s response failed", safeOperation(path))
+		return newClientError("invalid_response", http.StatusBadGateway)
 	}
 	return nil
 }
@@ -510,6 +723,10 @@ func parseAccountID(value string) (int64, error) {
 		return 0, errors.New("Sub2API account binding is invalid")
 	}
 	return id, nil
+}
+
+func importError(code, message string, retryable bool, status int) error {
+	return &gateways.DeploymentError{Code: code, Message: message, Outcome: gateways.DeploymentFailed, Retryable: retryable, HTTPStatus: status}
 }
 
 func safeOperation(path string) string {

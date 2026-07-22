@@ -27,14 +27,48 @@ import type {
 
 export const API_BASE = (import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8090/api').replace(/\/$/, '')
 
-export class ApiError extends Error {
+export interface ApiErrorFields {
+  code?: string
+  operationId?: string
+  subscriptionId?: string
+  target?: string | number
+  outcome?: string
+  retryable?: boolean
+  httpStatus?: number
+  archived?: boolean
+}
+
+export class ApiError extends Error implements ApiErrorFields {
+  readonly code?: string
+  readonly operationId?: string
+  readonly subscriptionId?: string
+  readonly target?: string | number
+  readonly outcome?: string
+  readonly retryable?: boolean
+  readonly httpStatus?: number
+  readonly archived?: boolean
+
   constructor(
     message: string,
     public status: number,
+    fields: ApiErrorFields = {},
   ) {
     super(message)
     this.name = 'ApiError'
+    Object.assign(this, fields)
   }
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function numberField(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function booleanField(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -56,13 +90,25 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     : await response.text().catch(() => '')
 
   if (!response.ok) {
-    const nestedError = typeof payload === 'object' && payload && typeof (payload as { error?: unknown }).error === 'object'
-      ? (payload as { error: { message?: string } }).error
+    const record = typeof payload === 'object' && payload ? payload as Record<string, unknown> : null
+    const nestedError = record && typeof record.error === 'object' && record.error
+      ? record.error as Record<string, unknown>
       : null
-    const message = typeof payload === 'object' && payload
-      ? String(nestedError?.message || (payload as ApiMessage).detail || (payload as ApiMessage).message || `请求失败（${response.status}）`)
-      : String(payload || `请求失败（${response.status}）`)
-    throw new ApiError(message, response.status)
+    // Only JSON error contracts are allowed into the UI. Plain-text upstream
+    // responses may contain credentials or implementation details.
+    const message = record
+      ? stringField(nestedError?.message) || stringField(record.detail) || stringField(record.message) || `请求失败（${response.status}）`
+      : `请求失败（${response.status}）`
+    throw new ApiError(message, response.status, {
+      code: stringField(nestedError?.code) || stringField(record?.code),
+      operationId: stringField(record?.operationId),
+      subscriptionId: stringField(record?.subscriptionId),
+      target: numberField(record?.targetId) ?? stringField(record?.target),
+      outcome: stringField(record?.outcome),
+      retryable: booleanField(record?.retryable),
+      httpStatus: numberField(record?.httpStatus) ?? response.status,
+      archived: booleanField(record?.archived),
+    })
   }
 
   return payload as T
@@ -85,7 +131,9 @@ async function normalizedImportBody(file: File): Promise<FormData> {
 
 async function timedImportRequest<T>(path: string, init: RequestInit): Promise<T> {
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), 20_000)
+  // The Sub2API import adapter may wait up to 120 seconds. Keep the browser
+  // deadline beyond that so the backend can return its durable outcome.
+  const timeout = window.setTimeout(() => controller.abort(), 135_000)
   try {
     return await request<T>(path, { ...init, signal: controller.signal })
   } catch (error) {

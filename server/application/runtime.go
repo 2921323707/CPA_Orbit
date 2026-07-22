@@ -15,6 +15,7 @@ import (
 	"cpa-monitor/server/internal/controlplane"
 	"cpa-monitor/server/internal/deployments"
 	"cpa-monitor/server/internal/gateways"
+	cpagateway "cpa-monitor/server/internal/gateways/cpa"
 	"cpa-monitor/server/internal/gateways/sub2api"
 	"cpa-monitor/server/internal/httpapi"
 	"cpa-monitor/server/internal/model"
@@ -99,7 +100,10 @@ func New(root string) (*Runtime, error) {
 	coordinator := deployments.NewCoordinator(control, subs, func(target controlplane.GatewayTarget, secret string) (gateways.Adapter, error) {
 		switch gateways.Kind(target.Kind) {
 		case gateways.KindCPA:
-			return subs.CPAAdapter(), nil
+			return cpagateway.NewClient(func() cpagateway.Config {
+				current := settings.Get()
+				return cpagateway.Config{BaseURL: target.BaseURL, ManagementKey: secret, AuthDir: current.CPAAuthDir, SyncEnabled: current.SyncToCPAAuthDir}
+			}, filepath.Join(dataDir, fmt.Sprintf("cpa-managed-files-%d.json", target.ID))), nil
 		case gateways.KindSub2API:
 			return sub2api.NewClient(func() sub2api.Config { return sub2api.Config{BaseURL: target.BaseURL, AdminKey: secret} }), nil
 		default:
