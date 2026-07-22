@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,9 @@ import (
 	"time"
 
 	"cpa-monitor/server/internal/config"
+	"cpa-monitor/server/internal/controlplane"
+	"cpa-monitor/server/internal/deployments"
+	"cpa-monitor/server/internal/observability"
 	"cpa-monitor/server/internal/subscriptions"
 )
 
@@ -24,11 +28,14 @@ type Server struct {
 	settings       *config.Store
 	monitor        *Monitor
 	subs           *subscriptions.Manager
+	control        *controlplane.Store
+	deployments    *deployments.Coordinator
+	collector      *observability.Collector
 	settingsUpdate func(config.Settings)
 }
 
-func NewServer(settings *config.Store, monitor *Monitor, subs *subscriptions.Manager) *Server {
-	return &Server{settings: settings, monitor: monitor, subs: subs}
+func NewServer(settings *config.Store, monitor *Monitor, subs *subscriptions.Manager, control *controlplane.Store, coordinator *deployments.Coordinator, collector *observability.Collector) *Server {
+	return &Server{settings: settings, monitor: monitor, subs: subs, control: control, deployments: coordinator, collector: collector}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -154,6 +161,45 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	case path == "/api/gateways/targets":
+		s.handleGatewayTargets(w, r)
+	case path == "/api/gateways/operations":
+		if !requireMethod(w, r, http.MethodGet) {
+			return
+		}
+		operations, err := s.deployments.Operations(r.Context(), queryInt(r, "limit", 100))
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "operations_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"operations": operations})
+	case path == "/api/gateways/overview":
+		if !requireMethod(w, r, http.MethodGet) {
+			return
+		}
+		s.handleGatewayOverview(w, r)
+	case path == "/api/gateways/usage":
+		if !requireMethod(w, r, http.MethodGet) {
+			return
+		}
+		targetID, err := strconv.ParseInt(r.URL.Query().Get("targetId"), 10, 64)
+		if err != nil || targetID <= 0 {
+			writeError(w, http.StatusBadRequest, "invalid_target", "targetId is required")
+			return
+		}
+		days := queryInt(r, "days", 7)
+		if days < 1 || days > 90 {
+			days = 7
+		}
+		to := time.Now().UTC()
+		buckets, err := s.control.ListUsageBuckets(r.Context(), targetID, to.Add(-time.Duration(days)*24*time.Hour), to)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "usage_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"buckets": buckets, "snapshots": s.collector.Snapshots(), "from": to.Add(-time.Duration(days) * 24 * time.Hour), "to": to})
+	case strings.HasPrefix(path, "/api/gateways/targets/"):
+		s.handleGatewayTargetAction(w, r, path)
 	case path == "/api/subscriptions":
 		if !requireMethod(w, r, http.MethodGet) {
 			return
@@ -492,7 +538,8 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 	if acquisitionPrice == "" {
 		acquisitionPrice = strings.TrimSpace(r.URL.Query().Get("acquisitionPrice"))
 	}
-	sub, synced, err := s.subs.ImportWithOptions(data, header.Filename, subscriptions.ImportOptions{AcquisitionPrice: acquisitionPrice})
+	deployToGateway, _ := strconv.ParseBool(strings.TrimSpace(r.URL.Query().Get("deploy")))
+	sub, synced, err := s.subs.ImportWithOptions(data, header.Filename, subscriptions.ImportOptions{AcquisitionPrice: acquisitionPrice, SkipLegacySync: deployToGateway})
 	if errors.Is(err, subscriptions.ErrDuplicateSubscription) {
 		message := "订阅未导入：相同账号已经存在"
 		var duplicate *subscriptions.DuplicateSubscriptionError
@@ -526,7 +573,16 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "import_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"subscription": sub, "syncedToCpa": synced})
+	result := map[string]any{"subscription": sub, "syncedToCpa": synced}
+	if deployToGateway {
+		binding, deployErr := s.deployments.DeployDefault(r.Context(), sub.ID)
+		if deployErr != nil {
+			result["deploymentError"] = deployErr.Error()
+		} else {
+			result["deployment"] = binding
+		}
+	}
+	writeJSON(w, http.StatusCreated, result)
 }
 
 func (s *Server) handleSubscriptionAction(w http.ResponseWriter, r *http.Request, path string) {
@@ -558,6 +614,18 @@ func (s *Server) handleSubscriptionAction(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusNotFound, "not_found", "subscription action not found")
 		return
 	}
+	if parts[1] == "bindings" {
+		if !requireMethod(w, r, http.MethodGet) {
+			return
+		}
+		bindings, err := s.deployments.Bindings(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "bindings_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"bindings": bindings})
+		return
+	}
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
@@ -584,9 +652,164 @@ func (s *Server) handleSubscriptionAction(w http.ResponseWriter, r *http.Request
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"syncedToCpa": true, "fileName": filepath.Base(target)})
+	case "deploy":
+		var input struct {
+			TargetID int64 `json:"targetId"`
+		}
+		if r.ContentLength != 0 {
+			if err := decodeJSON(w, r, &input, 64<<10); err != nil {
+				return
+			}
+		}
+		var binding controlplane.DeploymentBinding
+		var err error
+		if input.TargetID == 0 {
+			binding, err = s.deployments.DeployDefault(r.Context(), id)
+		} else {
+			binding, err = s.deployments.Deploy(r.Context(), id, input.TargetID)
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			writeError(w, http.StatusNotFound, "not_found", "subscription not found")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusBadGateway, "deployment_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, binding)
+	case "detach":
+		var input struct {
+			TargetID int64 `json:"targetId"`
+		}
+		if err := decodeJSON(w, r, &input, 64<<10); err != nil {
+			return
+		}
+		if input.TargetID == 0 {
+			writeError(w, http.StatusBadRequest, "invalid_target", "targetId is required")
+			return
+		}
+		binding, err := s.deployments.Detach(r.Context(), id, input.TargetID)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, "detach_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, binding)
+	case "migrate":
+		var input struct {
+			FromTargetID int64 `json:"fromTargetId"`
+			ToTargetID   int64 `json:"toTargetId"`
+		}
+		if err := decodeJSON(w, r, &input, 64<<10); err != nil {
+			return
+		}
+		if input.FromTargetID == 0 || input.ToTargetID == 0 {
+			writeError(w, http.StatusBadRequest, "invalid_migration", "fromTargetId and toTargetId are required")
+			return
+		}
+		binding, err := s.deployments.Migrate(r.Context(), id, input.FromTargetID, input.ToTargetID)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, "migration_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, binding)
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "subscription action not found")
 	}
+}
+
+type gatewayTargetInput struct {
+	ID                 int64   `json:"id"`
+	Kind               string  `json:"kind"`
+	Name               string  `json:"name"`
+	BaseURL            string  `json:"baseUrl"`
+	AdminKey           string  `json:"adminKey"`
+	Enabled            bool    `json:"enabled"`
+	Primary            bool    `json:"primary"`
+	AllowRemote        bool    `json:"allowRemote"`
+	DefaultGroupIDs    []int64 `json:"defaultGroupIds"`
+	DefaultConcurrency int     `json:"defaultConcurrency"`
+	DefaultPriority    int     `json:"defaultPriority"`
+	RateMultiplier     float64 `json:"rateMultiplier"`
+}
+
+func (s *Server) handleGatewayTargets(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		targets, err := s.deployments.Targets(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "targets_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"targets": targets})
+	case http.MethodPost, http.MethodPut:
+		var input gatewayTargetInput
+		if err := decodeJSON(w, r, &input, 256<<10); err != nil {
+			return
+		}
+		target, err := s.deployments.UpsertTarget(r.Context(), controlplane.GatewayTarget{
+			ID: input.ID, Kind: input.Kind, Name: input.Name, BaseURL: input.BaseURL, AdminKey: input.AdminKey,
+			Enabled: input.Enabled, Primary: input.Primary, AllowRemote: input.AllowRemote,
+			DefaultGroupIDs: input.DefaultGroupIDs, DefaultConcurrency: input.DefaultConcurrency,
+			DefaultPriority: input.DefaultPriority, RateMultiplier: input.RateMultiplier,
+		})
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_gateway_target", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, target)
+	default:
+		methodNotAllowed(w, http.MethodGet, http.MethodPost, http.MethodPut)
+	}
+}
+
+func (s *Server) handleGatewayTargetAction(w http.ResponseWriter, r *http.Request, path string) {
+	parts := strings.Split(strings.TrimPrefix(path, "/api/gateways/targets/"), "/")
+	if len(parts) != 2 || parts[1] != "test" {
+		writeError(w, http.StatusNotFound, "not_found", "gateway target action not found")
+		return
+	}
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	targetID, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || targetID <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid_target", "invalid gateway target ID")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	health, err := s.deployments.TargetHealth(ctx, targetID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "gateway_test_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, health)
+}
+
+func (s *Server) handleGatewayOverview(w http.ResponseWriter, r *http.Request) {
+	targets, err := s.deployments.Targets(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "overview_failed", err.Error())
+		return
+	}
+	statuses := make([]map[string]any, 0, len(targets))
+	for _, target := range targets {
+		entry := map[string]any{"target": target, "health": map[string]any{"status": "disabled"}}
+		if target.Enabled {
+			ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
+			health, healthErr := s.deployments.TargetHealth(ctx, target.ID)
+			cancel()
+			if healthErr != nil {
+				entry["health"] = map[string]any{"status": "unavailable", "message": healthErr.Error(), "checkedAt": time.Now()}
+			} else {
+				entry["health"] = health
+			}
+		}
+		statuses = append(statuses, entry)
+	}
+	bindings, _ := s.deployments.Bindings(r.Context(), "")
+	operations, _ := s.deployments.Operations(r.Context(), 20)
+	writeJSON(w, http.StatusOK, map[string]any{"targets": statuses, "bindings": bindings, "operations": operations, "snapshots": s.collector.Snapshots(), "checkedAt": time.Now()})
 }
 
 func (s *Server) handleCPAStatus(w http.ResponseWriter, r *http.Request) {

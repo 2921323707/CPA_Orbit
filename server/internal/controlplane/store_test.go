@@ -18,20 +18,28 @@ func TestStorePersistsTargetsBindingsOperationsAndUsage(t *testing.T) {
 
 	target, err := store.UpsertGatewayTarget(ctx, GatewayTarget{
 		Kind: "sub2api", Name: "Local Sub2API", BaseURL: "http://127.0.0.1:8081",
-		AdminKey: "admin-secret", Enabled: true, Primary: true,
+		AdminKey: "admin-secret", Enabled: true, Primary: true, DefaultGroupIDs: []int64{3, 5},
+		DefaultConcurrency: 2, DefaultPriority: 8, RateMultiplier: 1.25,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if target.ID == 0 || target.AdminKey != "" || !target.AdminKeyConfigured {
+	if target.ID == 0 || target.AdminKey != "" || !target.AdminKeyConfigured || len(target.DefaultGroupIDs) != 2 || target.DefaultConcurrency != 2 || target.RateMultiplier != 1.25 {
 		t.Fatalf("target must be persisted and redacted: %+v", target)
+	}
+	fallback, err := store.UpsertGatewayTarget(ctx, GatewayTarget{Kind: "cpa", Name: "Fallback", BaseURL: "http://127.0.0.1:8317/v1", Enabled: true, Primary: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fallback.Primary {
+		t.Fatal("new primary target was not persisted")
 	}
 
 	targets, err := store.ListGatewayTargets(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(targets) != 1 || targets[0].AdminKey != "" || !targets[0].AdminKeyConfigured {
+	if len(targets) != 2 || targets[0].ID != fallback.ID || !targets[0].Primary || targets[1].Primary || targets[1].AdminKey != "" || !targets[1].AdminKeyConfigured {
 		t.Fatalf("listed targets must not expose secrets: %+v", targets)
 	}
 	secret, err := store.GatewayTargetSecret(ctx, target.ID)

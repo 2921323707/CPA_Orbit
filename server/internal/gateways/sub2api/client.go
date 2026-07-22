@@ -191,6 +191,10 @@ func (c *Client) AccountAvailability(ctx context.Context) (Snapshot, error) {
 }
 
 func (c *Client) Usage(ctx context.Context, page, pageSize int) (UsagePage, error) {
+	return c.UsageRange(ctx, page, pageSize, time.Time{}, time.Time{})
+}
+
+func (c *Client) UsageRange(ctx context.Context, page, pageSize int, from, to time.Time) (UsagePage, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -198,6 +202,12 @@ func (c *Client) Usage(ctx context.Context, page, pageSize int) (UsagePage, erro
 		pageSize = 100
 	}
 	query := url.Values{"page": {strconv.Itoa(page)}, "page_size": {strconv.Itoa(pageSize)}}
+	if !from.IsZero() {
+		query.Set("start_date", from.UTC().Format(time.RFC3339))
+	}
+	if !to.IsZero() {
+		query.Set("end_date", to.UTC().Format(time.RFC3339))
+	}
 	var result UsagePage
 	err := c.do(ctx, http.MethodGet, "/usage", query, nil, &result, false)
 	return result, err

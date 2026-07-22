@@ -45,20 +45,20 @@ type DeployOptions struct {
 }
 
 type DeploymentResult struct {
-	Binding BindingRef
-	Status  string
-	Message string
+	Binding BindingRef `json:"binding"`
+	Status  string     `json:"status"`
+	Message string     `json:"message,omitempty"`
 }
 
 type Health struct {
-	Status    string
-	LatencyMS int64
-	CheckedAt time.Time
-	Message   string
+	Status    string    `json:"status"`
+	LatencyMS int64     `json:"latencyMs"`
+	CheckedAt time.Time `json:"checkedAt"`
+	Message   string    `json:"message,omitempty"`
 }
 
 type InspectResult struct {
-	Connectivity model.Connectivity
+	Connectivity model.Connectivity `json:"connectivity"`
 }
 
 // Adapter is the narrow contract used by deployment orchestration. Adapters own

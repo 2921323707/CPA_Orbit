@@ -66,6 +66,7 @@ type ImportOptions struct {
 	OrderURL         string
 	BaseURL          string
 	AcquisitionPrice string
+	SkipLegacySync   bool
 }
 
 type Manager struct {
@@ -407,7 +408,7 @@ func (m *Manager) ImportWithOptions(data []byte, originalName string, options Im
 		return model.Subscription{}, false, errors.New("imported subscription was not found after archive scan")
 	}
 	synced := false
-	if settings.SyncToCPAAuthDir {
+	if settings.SyncToCPAAuthDir && !options.SkipLegacySync {
 		if _, err := m.cpa.Deploy(context.Background(), gatewayCredential(sub, encoded), gateways.DeployOptions{}); err != nil {
 			return sub, false, fmt.Errorf("subscription archived but CPA auth-dir sync failed: %w", err)
 		}
@@ -436,6 +437,24 @@ func (m *Manager) Sync(id string) (string, error) {
 	result, err := m.cpa.Deploy(context.Background(), gatewayCredential(sub, data), gateways.DeployOptions{UpdateExisting: true})
 	return result.Binding.ExternalRef, err
 }
+
+func (m *Manager) GatewayCredential(id string) (gateways.Credential, error) {
+	sub, ok := m.Get(id)
+	if !ok {
+		return gateways.Credential{}, os.ErrNotExist
+	}
+	path, err := safeArchivedPath(m.root, sub.RelativePath)
+	if err != nil {
+		return gateways.Credential{}, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return gateways.Credential{}, err
+	}
+	return gatewayCredential(sub, data), nil
+}
+
+func (m *Manager) CPAAdapter() gateways.Adapter { return m.cpa }
 
 func (m *Manager) Delete(id string) error {
 	sub, ok := m.Get(id)
