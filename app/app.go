@@ -151,4 +151,9 @@ func (a *App) shutdown(context.Context) {
 		a.tray.Stop()
 		a.tray = nil
 	}
+	if a.runtime != nil {
+		if err := a.runtime.Close(); err != nil {
+			log.Printf("close control-plane store: %v", err)
+		}
+	}
 }

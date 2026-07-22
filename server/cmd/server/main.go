@@ -34,6 +34,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer appRuntime.Close()
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	appRuntime.Start(ctx)

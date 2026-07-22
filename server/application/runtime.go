@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"cpa-monitor/server/internal/config"
+	"cpa-monitor/server/internal/controlplane"
 	"cpa-monitor/server/internal/httpapi"
 	"cpa-monitor/server/internal/model"
 	"cpa-monitor/server/internal/scraper"
@@ -25,7 +26,10 @@ type Runtime struct {
 	server    *httpapi.Server
 	monitor   *httpapi.Monitor
 	settings  *config.Store
+	control   *controlplane.Store
 	startOnce sync.Once
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // Settings and Alert are public aliases so the desktop host can consume the
@@ -55,12 +59,17 @@ func New(root string) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	control, err := controlplane.NewStore(filepath.Join(dataDir, "control-plane.db"))
+	if err != nil {
+		return nil, err
+	}
 	subs, err := subscriptions.NewManager(
 		filepath.Join(absoluteRoot, "k12"),
 		filepath.Join(dataDir, "subscription_checks.json"),
 		settings,
 	)
 	if err != nil {
+		_ = control.Close()
 		return nil, err
 	}
 	monitor, err := httpapi.NewMonitor(
@@ -70,13 +79,14 @@ func New(root string) (*Runtime, error) {
 		scraper.NewClient(),
 	)
 	if err != nil {
+		_ = control.Close()
 		return nil, err
 	}
 
 	server := httpapi.NewServer(settings, monitor, subs)
 	return &Runtime{
 		root: absoluteRoot, handler: server.Handler(), server: server,
-		monitor: monitor, settings: settings,
+		monitor: monitor, settings: settings, control: control,
 	}, nil
 }
 
@@ -129,4 +139,18 @@ func (r *Runtime) Start(ctx context.Context) {
 	r.startOnce.Do(func() {
 		r.monitor.Start(ctx)
 	})
+}
+
+// Close releases durable local control-plane resources. It is safe to call
+// repeatedly from overlapping native and process shutdown hooks.
+func (r *Runtime) Close() error {
+	if r == nil {
+		return nil
+	}
+	r.closeOnce.Do(func() {
+		if r.control != nil {
+			r.closeErr = r.control.Close()
+		}
+	})
+	return r.closeErr
 }

@@ -15,6 +15,7 @@ func TestRuntimeCreatesPortableLayoutAndServesAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = runtime.Close() })
 	if runtime.Root() != root {
 		t.Fatalf("root = %q, want %q", runtime.Root(), root)
 	}
@@ -45,6 +46,7 @@ func TestDesktopHandlerTrustsOnlyInProcessAPIRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = runtime.Close() })
 
 	request := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 	request.Header.Set("Origin", "wails://wails")

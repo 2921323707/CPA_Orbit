@@ -50,6 +50,7 @@ func TestPrepareAPIReusesExistingMonitorBackend(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { app.shutdown(context.Background()) })
 	address := strings.TrimPrefix(external.URL, "http://")
 	if err := app.prepareAPI(address); err != nil {
 		t.Fatal(err)
