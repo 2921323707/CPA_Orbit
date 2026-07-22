@@ -1,0 +1,105 @@
+name: Documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-production-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build VitePress site
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+      - run: npm ci
+      - name: Add deployment revision
+        env:
+          DOCS_REVISION: ${{ github.sha }}
+        run: printf '%s\n' "$DOCS_REVISION" > public/revision.txt
+      - run: npm run build
+      - name: Verify generated routes
+        run: |
+          test -f .vitepress/dist/index.html
+          test -f .vitepress/dist/roadmap.html
+          test -f .vitepress/dist/zh/roadmap.html
+          test -f .vitepress/dist/revision.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cpa-orbit-docs-${{ github.sha }}
+          path: docs/.vitepress/dist
+          if-no-files-found: error
+          retention-days: 14
+
+  deploy:
+    name: Deploy documentation
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: documentation
+      url: http://165.154.205.54/cpa_orbit/
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: cpa-orbit-docs-${{ github.sha }}
+          path: dist
+      - name: Configure SSH
+        env:
+          DOCS_SSH_PRIVATE_KEY: ${{ secrets.DOCS_SSH_PRIVATE_KEY }}
+          DOCS_SSH_KNOWN_HOSTS: ${{ secrets.DOCS_SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DOCS_SSH_PRIVATE_KEY" > ~/.ssh/docs_deploy
+          chmod 600 ~/.ssh/docs_deploy
+          printf '%s\n' "$DOCS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Synchronize generated site
+        env:
+          DOCS_HOST: ${{ vars.DOCS_HOST }}
+          DOCS_SSH_PORT: ${{ vars.DOCS_SSH_PORT }}
+          DOCS_SSH_USER: ${{ vars.DOCS_SSH_USER }}
+          DOCS_DEPLOY_PATH: ${{ vars.DOCS_DEPLOY_PATH }}
+        run: |
+          : "${DOCS_HOST:?Set DOCS_HOST in the documentation environment}"
+          : "${DOCS_SSH_USER:?Set DOCS_SSH_USER in the documentation environment}"
+          : "${DOCS_DEPLOY_PATH:?Set DOCS_DEPLOY_PATH in the documentation environment}"
+          DOCS_SSH_PORT="${DOCS_SSH_PORT:-22}"
+          case "$DOCS_DEPLOY_PATH" in
+            /cpa_orbit|/cpa_orbit/) ;;
+            *) echo "Refusing unexpected deployment path: $DOCS_DEPLOY_PATH" >&2; exit 1 ;;
+          esac
+          rsync -az --delete --delay-updates \
+            -e "ssh -i ~/.ssh/docs_deploy -p $DOCS_SSH_PORT" \
+            dist/ "$DOCS_SSH_USER@$DOCS_HOST:${DOCS_DEPLOY_PATH%/}/"
+      - name: Verify public deployment
+        env:
+          DOCS_REVISION: ${{ github.sha }}
+        run: |
+          base='http://165.154.205.54/cpa_orbit'
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 "$base/" >/dev/null
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 "$base/roadmap" >/dev/null
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 "$base/zh/roadmap" >/dev/null
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 "$base/favicon.svg" >/dev/null
+          test "$(curl --fail --silent --show-error --retry 5 --retry-delay 3 "$base/revision.txt")" = "$DOCS_REVISION"
