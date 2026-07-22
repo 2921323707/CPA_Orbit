@@ -26,11 +26,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	companion, err := discoverCompanion(filepath.Dir(executable), config.DataDir)
+	companions, err := discoverCompanions(filepath.Dir(executable), config.DataDir, config)
 	if err != nil {
-		log.Printf("CLIProxyAPI auto-start is unavailable: %v", err)
+		log.Printf("desktop companion discovery warning: %v", err)
 	}
-	app, err := newApp(config.DataDir, companion)
+	app, err := newApp(config.DataDir, companions)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -38,15 +38,8 @@ func main() {
 		log.Fatal(err)
 	}
 	defer app.shutdown(context.Background())
-	if companion != nil {
-		started, startErr := companion.Start()
-		if startErr != nil {
-			log.Printf("CLIProxyAPI auto-start failed: %v", startErr)
-		} else if started {
-			log.Printf("CLIProxyAPI started automatically from %s", companion.executable)
-		} else {
-			log.Printf("CLIProxyAPI is already listening on %s", companionAddress)
-		}
+	if err := companions.Start(); err != nil {
+		log.Printf("desktop companion startup failed: %v", err)
 	}
 	log.Printf("CPA Orbit desktop data directory: %s", config.DataDir)
 	if config.ConfigPath != "" {

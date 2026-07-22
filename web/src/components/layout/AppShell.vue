@@ -49,7 +49,7 @@ function endpointHost(raw: string, fallback: string) {
   }
 }
 
-const monitorEndpoint = endpointHost(API_BASE, '127.0.0.1:8080')
+const monitorEndpoint = endpointHost(API_BASE, '127.0.0.1:8090')
 
 function applyTheme(value: 'light' | 'dark') {
   document.documentElement.dataset.theme = value

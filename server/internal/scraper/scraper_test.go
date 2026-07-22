@@ -13,6 +13,9 @@ func TestNewClientUsesFilteredK12FeedAndFiveOfferLimit(t *testing.T) {
 	if client.MaxOffers != 5 {
 		t.Fatalf("got max offers %d, want 5", client.MaxOffers)
 	}
+	if client.MaxPrice != 5 {
+		t.Fatalf("got max price %.2f, want 5.00", client.MaxPrice)
+	}
 }
 
 func TestNewGPTPlusClientUsesUnverifiedAccountFeed(t *testing.T) {
@@ -27,7 +30,10 @@ func TestParseOffersFiltersSortsAndExtracts(t *testing.T) {
 <tr><td>在售 库存 20</td><td>甲商家 链动小铺 / SHOP_1</td><td>普通 Team</td><td>¥0.10</td><td>2026-01-01</td><td></td><td><a href="/item/nope">购买</a></td></tr>
 <tr><td>售罄</td><td>乙商家</td><td>K12 CPA</td><td>¥0.20</td><td>2026-01-01</td><td></td><td><a href="/item/sold">购买</a></td></tr>
 <tr><td>有货 8</td><td>奥特曼严选链动小铺 / PAXOVOVJ</td><td>1个 team k12子号 反代</td><td>¥0.46</td><td>2026-07-18 15:10</td><td></td><td><a href="https://pay.ldxp.cn/item/orahrw">前往购买</a></td></tr>
-<tr><td>在售 3</td><td>JSON店</td><td>CPA JSON 文件</td><td>¥0.43</td><td>2026-07-18 15:11</td><td></td><td><a href="/item/cheap">购买</a></td></tr>
+<tr><td>有货 3</td><td>丙商家</td><td>K12 子号</td><td>¥0.43</td><td>2026-07-18 15:11</td><td></td><td><a href="/item/cheap">购买</a></td></tr>
+<tr><td>有货 库存 67</td><td>牟利ai</td><td>GPT BUG TEAM 账号 月限额 仅限sub2api，cpa自己解决</td><td>¥12.36</td><td>2026-07-20 22:17</td><td></td><td><a href="/item/bug-team">购买</a></td></tr>
+<tr><td>有货 库存 2</td><td>丁商家</td><td>K12 子号</td><td>¥5.01</td><td>2026-07-18 15:12</td><td></td><td><a href="/item/over-price">购买</a></td></tr>
+<tr><td>无货 库存 0</td><td>戊商家</td><td>K12 子号</td><td>¥0.30</td><td>2026-07-18 15:13</td><td></td><td><a href="/item/no-stock">购买</a></td></tr>
 </tbody></table>`
 	offers, err := ParseOffers(strings.NewReader(html), "https://priceai.cc/products/chatgpt-team-business")
 	if err != nil {

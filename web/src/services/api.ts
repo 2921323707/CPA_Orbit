@@ -8,24 +8,67 @@ import type {
   LubanNumberSession,
   LubanService,
   LubanSmsStatus,
-  ImportSubscriptionsOptions,
+  ImportCommitOptions,
+  ImportCommitResponse,
+  ImportPreflightOptions,
+  ImportPreflightResponse,
+  DeploymentBinding,
+  GatewayHealth,
+  GatewayOverview,
+  GatewayTarget,
+  GatewayUsageResponse,
   Offer,
   Settings,
   SubscriptionConnectivity,
   SubscriptionPage,
+  SubscriptionPollStatus,
   SubscriptionQuery,
 } from '../types/api'
 
-export const API_BASE = (import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8080/api').replace(/\/$/, '')
+export const API_BASE = (import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8090/api').replace(/\/$/, '')
 
-export class ApiError extends Error {
+export interface ApiErrorFields {
+  code?: string
+  operationId?: string
+  subscriptionId?: string
+  target?: string | number
+  outcome?: string
+  retryable?: boolean
+  httpStatus?: number
+  archived?: boolean
+}
+
+export class ApiError extends Error implements ApiErrorFields {
+  readonly code?: string
+  readonly operationId?: string
+  readonly subscriptionId?: string
+  readonly target?: string | number
+  readonly outcome?: string
+  readonly retryable?: boolean
+  readonly httpStatus?: number
+  readonly archived?: boolean
+
   constructor(
     message: string,
     public status: number,
+    fields: ApiErrorFields = {},
   ) {
     super(message)
     this.name = 'ApiError'
+    Object.assign(this, fields)
   }
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function numberField(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function booleanField(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -47,13 +90,25 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     : await response.text().catch(() => '')
 
   if (!response.ok) {
-    const nestedError = typeof payload === 'object' && payload && typeof (payload as { error?: unknown }).error === 'object'
-      ? (payload as { error: { message?: string } }).error
+    const record = typeof payload === 'object' && payload ? payload as Record<string, unknown> : null
+    const nestedError = record && typeof record.error === 'object' && record.error
+      ? record.error as Record<string, unknown>
       : null
-    const message = typeof payload === 'object' && payload
-      ? String(nestedError?.message || (payload as ApiMessage).detail || (payload as ApiMessage).message || `请求失败（${response.status}）`)
-      : String(payload || `请求失败（${response.status}）`)
-    throw new ApiError(message, response.status)
+    // Only JSON error contracts are allowed into the UI. Plain-text upstream
+    // responses may contain credentials or implementation details.
+    const message = record
+      ? stringField(nestedError?.message) || stringField(record.detail) || stringField(record.message) || `请求失败（${response.status}）`
+      : `请求失败（${response.status}）`
+    throw new ApiError(message, response.status, {
+      code: stringField(nestedError?.code) || stringField(record?.code),
+      operationId: stringField(record?.operationId),
+      subscriptionId: stringField(record?.subscriptionId),
+      target: numberField(record?.targetId) ?? stringField(record?.target),
+      outcome: stringField(record?.outcome),
+      retryable: booleanField(record?.retryable),
+      httpStatus: numberField(record?.httpStatus) ?? response.status,
+      archived: booleanField(record?.archived),
+    })
   }
 
   return payload as T
@@ -62,6 +117,31 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 function unwrapList<T>(payload: T[] | { items?: T[]; data?: T[]; offers?: T[]; subscriptions?: T[]; alerts?: T[] }): T[] {
   if (Array.isArray(payload)) return payload
   return payload.items ?? payload.data ?? payload.offers ?? payload.subscriptions ?? payload.alerts ?? []
+}
+
+async function normalizedImportBody(file: File): Promise<FormData> {
+  // WebView2 can expose correct File metadata while serializing an empty part.
+  // Rebuilding a BOM-free Blob keeps desktop/browser multipart behavior aligned.
+  const normalized = (await file.text()).replace(/^﻿/, '')
+  if (!normalized.trim()) throw new ApiError('选择的 JSON 文件为空或无法读取', 400)
+  const body = new FormData()
+  body.append('file', new Blob([normalized], { type: 'application/json' }), file.name)
+  return body
+}
+
+async function timedImportRequest<T>(path: string, init: RequestInit): Promise<T> {
+  const controller = new AbortController()
+  // The Sub2API import adapter may wait up to 120 seconds. Keep the browser
+  // deadline beyond that so the backend can return its durable outcome.
+  const timeout = window.setTimeout(() => controller.abort(), 135_000)
+  try {
+    return await request<T>(path, { ...init, signal: controller.signal })
+  } catch (error) {
+    if (controller.signal.aborted) throw new ApiError('导入请求超时，请检查后端状态后重试', 0)
+    throw error
+  } finally {
+    window.clearTimeout(timeout)
+  }
 }
 
 export const api = {
@@ -100,44 +180,38 @@ export const api = {
     const suffix = params.size ? `?${params.toString()}` : ''
     return request<SubscriptionPage>(`/subscriptions${suffix}`)
   },
-  async importSubscriptions(options: ImportSubscriptionsOptions) {
-    const body = new FormData()
-    // WebView2 can expose the selected File metadata correctly while sending
-    // an empty multipart part when the original File object is appended
-    // directly. Read the file first and rebuild a Blob so desktop and browser
-    // clients send the same bytes to the Go API.
-    const normalized = (await options.file.text()).replace(/^\uFEFF/, '')
-    if (!normalized.trim()) {
-      throw new ApiError('选择的 JSON 文件为空或无法读取', 400)
-    }
-    body.append('file', new Blob([normalized], { type: 'application/json' }), options.file.name)
-
-    // WebView2 can stall while serializing a multipart body that mixes a
-    // rebuilt Blob with a trailing scalar field. Keep the body file-only and
-    // send the optional non-sensitive price as a query parameter instead.
-    const params = new URLSearchParams()
-    if (options.acquisitionPrice) params.set('acquisitionPrice', options.acquisitionPrice)
-    const suffix = params.size ? `?${params.toString()}` : ''
-    const controller = new AbortController()
-    const timeout = window.setTimeout(() => controller.abort(), 20_000)
-    try {
-      return await request<ApiMessage>(`/subscriptions/import${suffix}`, {
-        method: 'POST',
-        body,
-        signal: controller.signal,
-      })
-    } catch (error) {
-      if (controller.signal.aborted) {
-        throw new ApiError('导入请求超时，请检查后端状态后重试', 0)
-      }
-      throw error
-    } finally {
-      window.clearTimeout(timeout)
-    }
+  async preflightSubscriptionImport(options: ImportPreflightOptions) {
+    return timedImportRequest<ImportPreflightResponse>('/subscriptions/import/preflight', {
+      method: 'POST',
+      body: await normalizedImportBody(options.file),
+    })
   },
+  async commitSubscriptionImport(options: ImportCommitOptions) {
+    // Keep multipart file-only for WebView2. Non-secret metadata remains in the
+    // query string; the signed token is sent separately and never displayed.
+    const params = new URLSearchParams({ targetId: String(options.targetId) })
+    if (options.acquisitionPrice) params.set('acquisitionPrice', options.acquisitionPrice)
+    return timedImportRequest<ImportCommitResponse>(`/subscriptions/import/commit?${params.toString()}`, {
+      method: 'POST',
+      headers: { 'X-Orbit-Preflight-Token': options.preflightToken },
+      body: await normalizedImportBody(options.file),
+    })
+  },
+  getSubscriptionPollStatus: () => request<SubscriptionPollStatus>('/subscriptions/poll-status'),
+  pollSubscriptionsNow: () => request<{ started: boolean }>('/subscriptions/poll-now', { method: 'POST' }),
   testSubscription: (id: string | number) => request<SubscriptionConnectivity>(`/subscriptions/${encodeURIComponent(id)}/test`, { method: 'POST' }),
   syncSubscription: (id: string | number) => request<ApiMessage>(`/subscriptions/${encodeURIComponent(id)}/sync`, { method: 'POST' }),
   deleteSubscription: (id: string | number) => request<ApiMessage>(`/subscriptions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  getGatewayOverview: () => request<GatewayOverview>('/gateways/overview'),
+	collectGatewayTelemetry: () => request<ApiMessage>('/gateways/collect', { method: 'POST' }),
+  getGatewayTargets: () => request<{ targets: GatewayTarget[] }>('/gateways/targets'),
+  saveGatewayTarget: (target: Partial<GatewayTarget> & Pick<GatewayTarget, 'kind' | 'name' | 'baseUrl'>) => request<GatewayTarget>('/gateways/targets', { method: 'POST', body: JSON.stringify(target) }),
+  testGatewayTarget: (id: number) => request<GatewayHealth>(`/gateways/targets/${id}/test`, { method: 'POST' }),
+  getGatewayUsage: (targetId: number, days = 7) => request<GatewayUsageResponse>(`/gateways/usage?targetId=${targetId}&days=${days}`),
+  getSubscriptionBindings: (id: string | number) => request<{ bindings: DeploymentBinding[] }>(`/subscriptions/${encodeURIComponent(id)}/bindings`),
+  deploySubscription: (id: string | number, targetId?: number) => request<DeploymentBinding>(`/subscriptions/${encodeURIComponent(id)}/deploy`, { method: 'POST', body: JSON.stringify(targetId ? { targetId } : {}) }),
+  detachSubscription: (id: string | number, targetId: number) => request<DeploymentBinding>(`/subscriptions/${encodeURIComponent(id)}/detach`, { method: 'POST', body: JSON.stringify({ targetId }) }),
+  migrateSubscription: (id: string | number, fromTargetId: number, toTargetId: number) => request<DeploymentBinding>(`/subscriptions/${encodeURIComponent(id)}/migrate`, { method: 'POST', body: JSON.stringify({ fromTargetId, toTargetId }) }),
   getSettings: () => request<Settings>('/settings'),
   updateSettings: (settings: Settings) => request<Settings | ApiMessage>('/settings', { method: 'PUT', body: JSON.stringify(settings) }),
   testWebhook: (webhookUrl?: string) => request<ApiMessage>('/settings/test-webhook', {

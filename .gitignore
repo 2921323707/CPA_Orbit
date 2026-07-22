@@ -24,10 +24,18 @@ docs/.vitepress/dist/
 # Runtime state
 data/*.json
 data/*.tmp
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/*identity*.key
+data/companions/
+data/logs/
 cpa/.runtime/
+sub2api/.runtime/
 
 # Imported credentials (contain bearer tokens)
 k12/**/*.json
+subscriptions/**/*.json
 
 # Integrated mature CLIProxyAPI runtime and private data
 cpa/app/cli-proxy-api.exe

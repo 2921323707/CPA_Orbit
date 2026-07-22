@@ -171,6 +171,7 @@ func TestSubscriptionCategory(t *testing.T) {
 		want string
 	}{
 		"normal":              {item: model.Subscription{Connectivity: model.Connectivity{Status: "ok"}}, want: "normal"},
+		"pending":             {item: model.Subscription{Connectivity: model.Connectivity{Status: "unknown"}}, want: "pending"},
 		"five-hour exhausted": {item: model.Subscription{Connectivity: model.Connectivity{Status: "quota_exhausted", Quota: &model.UsageQuota{FiveHour: &model.QuotaWindow{RemainingPercent: &zero}, SevenDay: &model.QuotaWindow{RemainingPercent: &half}}}}, want: "normal"},
 		"other error":         {item: model.Subscription{Connectivity: model.Connectivity{Status: "payment_required"}}, want: "error"},
 	} {
@@ -258,5 +259,31 @@ func TestImportAllowsPartialJSONDifferences(t *testing.T) {
 	}
 	if _, _, err := m.Import(first, "duplicate.json", "", ""); !errors.Is(err, ErrDuplicateSubscription) {
 		t.Fatalf("expected exact JSON duplicate, got %v", err)
+	}
+}
+
+func TestImportArchivesByGatewayProviderAndDate(t *testing.T) {
+	root := t.TempDir()
+	settings, err := config.NewStore(filepath.Join(t.TempDir(), "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := &Manager{root: root, checksPath: filepath.Join(t.TempDir(), "checks.json"), settings: settings, items: make(map[string]model.Subscription), checks: make(map[string]model.Connectivity)}
+	date := time.Now().Format("0102")
+
+	sub2apiItem, _, err := m.ImportWithOptions([]byte(`{"email":"sub2api@example.com","access_token":"one"}`), "sub2api.json", ImportOptions{ArchiveProvider: "sub2api", SkipLegacySync: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.ToSlash(filepath.Join("sub2api", date, "sub2api.json")); sub2apiItem.RelativePath != want {
+		t.Fatalf("Sub2API archive path=%q, want %q", sub2apiItem.RelativePath, want)
+	}
+
+	cpaItem, _, err := m.ImportWithOptions([]byte(`{"email":"cpa@example.com","access_token":"two"}`), "cpa.json", ImportOptions{ArchiveProvider: "cpa", SkipLegacySync: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.ToSlash(filepath.Join("cpa", date, "cpa.json")); cpaItem.RelativePath != want {
+		t.Fatalf("CPA archive path=%q, want %q", cpaItem.RelativePath, want)
 	}
 }

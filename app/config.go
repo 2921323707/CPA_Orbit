@@ -18,10 +18,29 @@ const (
 	configFileName      = "cpa-orbit.config.json"
 )
 
+type companionConfigFile struct {
+	Name             string            `json:"name"`
+	Executable       string            `json:"executable"`
+	Args             []string          `json:"args"`
+	WorkingDirectory string            `json:"workingDirectory"`
+	Address          string            `json:"address"`
+	ReadinessURL     string            `json:"readinessURL"`
+	ReadinessMethod  string            `json:"readinessMethod"`
+	ReadinessHeaders map[string]string `json:"readinessHeaders"`
+	ExpectedStatus   int               `json:"expectedStatus"`
+	ExpectedBody     []string          `json:"expectedBody"`
+	ExpectedJSON     map[string]string `json:"expectedJSON"`
+	StartupTimeout   string            `json:"startupTimeout"`
+	Required         bool              `json:"required"`
+	Ownership        string            `json:"ownership"`
+}
+
 type desktopConfigFile struct {
-	DataDir      string `json:"dataDir"`
-	WindowWidth  int    `json:"windowWidth"`
-	WindowHeight int    `json:"windowHeight"`
+	DataDir      string               `json:"dataDir"`
+	WindowWidth  int                  `json:"windowWidth"`
+	WindowHeight int                  `json:"windowHeight"`
+	CPA          *companionConfigFile `json:"cpa"`
+	Sub2API      *companionConfigFile `json:"sub2api"`
 }
 
 type desktopConfig struct {
@@ -29,6 +48,8 @@ type desktopConfig struct {
 	ConfigPath   string
 	WindowWidth  int
 	WindowHeight int
+	CPA          *companionConfigFile
+	Sub2API      *companionConfigFile
 }
 
 func loadDesktopConfig() (desktopConfig, error) {
@@ -112,6 +133,8 @@ func loadDesktopConfigFrom(explicitConfig, dataOverride, executableDir, userConf
 	}
 	result.DataDir = filepath.Clean(absoluteDataDir)
 	result.ConfigPath = configPath
+	result.CPA = fileConfig.CPA
+	result.Sub2API = fileConfig.Sub2API
 	return result, nil
 }
 

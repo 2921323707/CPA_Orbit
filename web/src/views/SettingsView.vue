@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { Activity, Bell, BellRing, Cable, FolderCog, KeyRound, ListTree, MonitorCog, Save, Send, ShieldCheck } from 'lucide-vue-next'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { Activity, Bell, BellRing, Cable, FolderCog, KeyRound, ListTree, MonitorCog, Network, Plus, Save, Send, ServerCog, ShieldCheck, X } from 'lucide-vue-next'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AlertsView from './AlertsView.vue'
 import ErrorState from '../components/common/ErrorState.vue'
 import LoadingState from '../components/common/LoadingState.vue'
+import GatewayStatusCard from '../components/dashboard/GatewayStatusCard.vue'
 import { useToast } from '../composables/useToast'
 import { api } from '../services/api'
-import type { Settings } from '../types/api'
+import type { GatewayOverview, Settings } from '../types/api'
 import { getErrorMessage } from '../utils/format'
 import {
+  settingsAccountPollInterval,
   settingsAllowRemote,
   settingsBaseUrl,
   settingsCpaAuthDir,
@@ -19,7 +21,7 @@ import {
   settingsWebhookUrl,
 } from '../utils/models'
 
-type SettingsSection = 'monitor' | 'desktop' | 'connection' | 'cpa' | 'webhook' | 'alerts'
+type SettingsSection = 'monitor' | 'desktop' | 'connection' | 'gateways' | 'cpa' | 'webhook' | 'alerts'
 
 const loading = ref(true)
 const saving = ref(false)
@@ -32,6 +34,7 @@ const settingsSections = [
   { id: 'monitor' as const, label: '监控设置', icon: Activity },
   { id: 'desktop' as const, label: '桌面体验', icon: MonitorCog },
   { id: 'connection' as const, label: '连接设置', icon: Cable },
+  { id: 'gateways' as const, label: '网关配置', icon: Network },
   { id: 'cpa' as const, label: 'CPA 同步', icon: FolderCog },
   { id: 'webhook' as const, label: 'Webhook', icon: BellRing },
   { id: 'alerts' as const, label: '提醒中心', icon: Bell },
@@ -43,6 +46,8 @@ const activeSection = computed<SettingsSection>(() => {
 const form = reactive({
   priceThreshold: 0,
   refreshInterval: 1,
+  accountPollEnabled: true,
+  accountPollMinutes: 5,
   baseUrl: '',
   apiKey: '',
   webhookUrl: '',
@@ -56,6 +61,15 @@ const form = reactive({
   flashOnAlert: true,
 })
 
+const gatewayOverview = ref<GatewayOverview | null>(null)
+const gatewayLoading = ref(false)
+const gatewayError = ref('')
+const testingGatewayId = ref<number | null>(null)
+const savingGateway = ref(false)
+const gatewayFormOpen = ref(false)
+const gatewayValidationError = ref('')
+const gatewayForm = reactive({ id: 0, kind: 'sub2api' as 'sub2api' | 'cpa', name: 'Local Sub2API', baseUrl: 'http://127.0.0.1:8080', adminKey: '', enabled: true, primary: true, allowRemote: false, groupIds: '', concurrency: 2, priority: 0, rateMultiplier: 1 })
+
 function setSection(section: SettingsSection) {
   void router.replace({ path: '/settings', query: section === 'monitor' ? {} : { section } })
 }
@@ -67,6 +81,9 @@ async function load() {
     const data = await api.getSettings()
     form.priceThreshold = settingsPriceThreshold(data)
     form.refreshInterval = settingsRefreshInterval(data)
+    const accountPollMinutes = settingsAccountPollInterval(data)
+    form.accountPollEnabled = accountPollMinutes > 0
+    form.accountPollMinutes = accountPollMinutes > 0 ? accountPollMinutes : 5
     form.baseUrl = settingsBaseUrl(data)
     form.webhookUrl = settingsWebhookUrl(data)
     form.allowRemoteBaseUrl = settingsAllowRemote(data)
@@ -90,6 +107,7 @@ async function save() {
   const payload: Settings = {
     threshold: Number(form.priceThreshold),
     refreshMinutes: Number(form.refreshInterval),
+    accountPollMinutes: form.accountPollEnabled ? Number(form.accountPollMinutes) : 0,
     baseUrl: form.baseUrl.trim(),
     webhookUrl: form.webhookUrl.trim(),
     allowRemoteBaseUrl: form.allowRemoteBaseUrl,
@@ -125,6 +143,104 @@ async function testWebhook() {
   }
 }
 
+async function loadGateways() {
+  gatewayLoading.value = true
+  gatewayError.value = ''
+  try {
+    gatewayOverview.value = await api.getGatewayOverview()
+  } catch (err) {
+    gatewayError.value = getErrorMessage(err)
+  } finally {
+    gatewayLoading.value = false
+  }
+}
+
+function newGatewayTarget() {
+  Object.assign(gatewayForm, { id: 0, kind: 'sub2api', name: 'Local Sub2API', baseUrl: 'http://127.0.0.1:8080', adminKey: '', enabled: true, primary: true, allowRemote: false, groupIds: '', concurrency: 2, priority: 0, rateMultiplier: 1 })
+  gatewayValidationError.value = ''
+  gatewayFormOpen.value = true
+}
+
+function editGatewayTarget(id: number) {
+  const target = gatewayOverview.value?.targets.find((item) => item.target.id === id)?.target
+  if (!target) return
+  Object.assign(gatewayForm, { id: target.id, kind: target.kind, name: target.name, baseUrl: target.baseUrl, adminKey: '', enabled: target.enabled, primary: target.primary, allowRemote: target.allowRemote, groupIds: (target.defaultGroupIds || []).join(', '), concurrency: target.defaultConcurrency || 1, priority: target.defaultPriority || 0, rateMultiplier: target.rateMultiplier || 1 })
+  gatewayValidationError.value = ''
+  gatewayFormOpen.value = true
+}
+
+function parseGatewayGroupIds() {
+  const values = gatewayForm.groupIds.split(',').map((value) => value.trim()).filter(Boolean)
+  const groupIds = values.map(Number)
+  return groupIds.every((value) => Number.isInteger(value) && value > 0) ? groupIds : null
+}
+
+function validateGatewayTarget() {
+  if (!gatewayForm.name.trim()) return '请输入显示名称。'
+  let url: URL
+  try {
+    url = new URL(gatewayForm.baseUrl.trim())
+  } catch {
+    return '请输入有效的网关管理地址。'
+  }
+  if (!['http:', 'https:'].includes(url.protocol)) return '网关管理地址仅支持 HTTP 或 HTTPS。'
+  const isLoopback = ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname)
+  if (!isLoopback && !gatewayForm.allowRemote) return '远程地址需要开启“允许远程地址”。'
+  if (!isLoopback && url.protocol !== 'https:') return '远程网关必须使用 HTTPS。'
+  if (gatewayForm.kind === 'sub2api' && !gatewayForm.id && !gatewayForm.adminKey.trim()) return '新增 Sub2API 时请输入管理密钥。'
+  if (parseGatewayGroupIds() === null) return '默认分组 ID 必须是以逗号分隔的正整数。'
+  if (!Number.isInteger(Number(gatewayForm.concurrency)) || Number(gatewayForm.concurrency) < 1 || Number(gatewayForm.concurrency) > 1000) return '账号并发必须是 1 到 1000 的整数。'
+  if (!Number.isInteger(Number(gatewayForm.priority)) || Number(gatewayForm.priority) < -1000 || Number(gatewayForm.priority) > 1000) return '调度优先级必须是 -1000 到 1000 的整数。'
+  if (!Number.isFinite(Number(gatewayForm.rateMultiplier)) || Number(gatewayForm.rateMultiplier) < 0.01 || Number(gatewayForm.rateMultiplier) > 1000) return '成本倍率必须在 0.01 到 1000 之间。'
+  return ''
+}
+
+async function saveGatewayTarget() {
+  gatewayValidationError.value = validateGatewayTarget()
+  if (gatewayValidationError.value) return
+  savingGateway.value = true
+  try {
+    await api.saveGatewayTarget({
+      id: gatewayForm.id || undefined,
+      kind: gatewayForm.kind,
+      name: gatewayForm.name.trim(),
+      baseUrl: gatewayForm.baseUrl.trim(),
+      adminKey: gatewayForm.adminKey.trim() || undefined,
+      enabled: gatewayForm.enabled,
+      primary: gatewayForm.primary,
+      allowRemote: gatewayForm.allowRemote,
+      defaultGroupIds: parseGatewayGroupIds() || [],
+      defaultConcurrency: Number(gatewayForm.concurrency),
+      defaultPriority: Number(gatewayForm.priority),
+      rateMultiplier: Number(gatewayForm.rateMultiplier),
+    })
+    toast.success('网关配置已保存，管理密钥不会回显')
+    gatewayForm.adminKey = ''
+    gatewayFormOpen.value = false
+    await loadGateways()
+  } catch (err) {
+    gatewayValidationError.value = getErrorMessage(err)
+  } finally {
+    savingGateway.value = false
+  }
+}
+
+async function testGatewayTarget(id: number) {
+  testingGatewayId.value = id
+  try {
+    const result = await api.testGatewayTarget(id)
+    result.status === 'ok' ? toast.success(`连接正常 · ${result.latencyMs || 0} ms`) : toast.error(result.message || '网关连接异常')
+    await loadGateways()
+  } catch (err) {
+    toast.error(getErrorMessage(err))
+  } finally {
+    testingGatewayId.value = null
+  }
+}
+
+watch(activeSection, (section) => {
+  if (section === 'gateways' && !gatewayOverview.value && !gatewayLoading.value) void loadGateways()
+}, { immediate: true })
 onMounted(load)
 </script>
 
@@ -143,12 +259,31 @@ onMounted(load)
 
       <AlertsView v-if="activeSection === 'alerts'" class="settings-content" />
 
+      <div v-else-if="activeSection === 'gateways'" class="page-stack settings-content gateway-settings">
+        <section class="panel settings-section gateway-settings__intro">
+          <div class="panel__header panel__header--wrap">
+            <div><h2>网关配置</h2><p>连接独立运行的 Sub2API 或 CPA 网关目标。CPA Orbit 不内置 Sub2API；主网关标记不会触发跨目标自动故障转移。</p></div>
+            <button class="button button--primary" type="button" @click="newGatewayTarget"><Plus :size="16" />添加网关</button>
+          </div>
+        </section>
+        <LoadingState v-if="gatewayLoading && !gatewayOverview" label="正在加载网关配置…" />
+        <ErrorState v-else-if="gatewayError && !gatewayOverview" :message="gatewayError" @retry="loadGateways" />
+        <section v-else class="gateway-rack gateway-rack--settings" aria-label="网关目标列表">
+          <div class="section-heading"><div><span class="eyebrow">GATEWAY TARGETS</span><h2>已配置网关</h2></div><span>{{ gatewayOverview?.targets.length || 0 }} 个目标</span></div>
+          <div v-if="gatewayOverview?.targets.length" class="gateway-grid"><GatewayStatusCard v-for="item in gatewayOverview.targets" :key="item.target.id" :status="item" :testing="testingGatewayId === item.target.id" @test="testGatewayTarget" @edit="editGatewayTarget" /></div>
+          <div v-else class="operations-empty"><ServerCog :size="28" /><strong>尚未配置网关</strong><span>添加 Sub2API 或 CPA 目标后，可在这里编辑配置并检查连接健康。</span></div>
+          <div v-if="gatewayError" class="inline-alert inline-alert--warning gateway-settings__warning"><span>{{ gatewayError }}</span><button class="button button--ghost button--small" type="button" @click="loadGateways">重试</button></div>
+        </section>
+      </div>
+
       <form v-else class="page-stack settings-content" @submit.prevent="save">
         <section v-if="activeSection === 'monitor'" class="panel form-section settings-section">
           <div class="panel__header"><div><h2>监控设置</h2><p>控制低价阈值和后端刷新节奏。</p></div></div>
           <div class="form-grid">
             <label class="field"><span>低价提醒阈值（元）</span><input v-model.number="form.priceThreshold" type="number" min="0" step="0.01" required /></label>
-            <label class="field"><span>刷新周期（分钟）</span><input v-model.number="form.refreshInterval" type="number" min="1" step="1" required /><small>单位为分钟，建议根据上游频率限制合理设置。</small></label>
+            <label class="field"><span>行情刷新周期（分钟）</span><input v-model.number="form.refreshInterval" type="number" min="1" max="1440" step="1" required /><small>仅控制价格行情，不影响账号状态或额度。</small></label>
+            <label class="check-row form-grid__wide"><input v-model="form.accountPollEnabled" class="switch" type="checkbox" /><span><strong>自动轮询账号状态与额度</strong><small>默认每 5 分钟检查一次；关闭后仍可手动立即轮询。</small></span></label>
+            <label v-if="form.accountPollEnabled" class="field"><span>账号轮询周期（分钟）</span><input v-model.number="form.accountPollMinutes" type="number" min="5" max="1440" step="1" required /><small>允许范围为 5–1440 分钟。</small></label>
           </div>
         </section>
 
@@ -192,6 +327,27 @@ onMounted(load)
           <div class="security-summary"><ShieldCheck :size="17" /><span>敏感配置由后端持久化</span></div>
           <button class="button button--primary" type="submit" :disabled="saving"><Save :size="17" />{{ saving ? '保存中…' : '保存设置' }}</button>
         </div>
+      </form>
+    </div>
+
+    <div v-if="gatewayFormOpen" class="gateway-modal" role="dialog" aria-modal="true" aria-label="配置网关">
+      <button class="gateway-modal__backdrop" type="button" aria-label="关闭" @click="gatewayFormOpen = false" />
+      <form class="gateway-form" @submit.prevent="saveGatewayTarget">
+        <div class="gateway-form__head"><div><span class="eyebrow">TARGET PROFILE</span><h2>{{ gatewayForm.id ? '编辑网关' : '添加网关' }}</h2></div><button class="icon-button" type="button" aria-label="关闭" @click="gatewayFormOpen = false"><X :size="19" /></button></div>
+        <div v-if="gatewayValidationError" class="inline-alert inline-alert--warning gateway-form__validation" role="alert">{{ gatewayValidationError }}</div>
+        <div class="form-grid">
+          <label class="field"><span>网关类型</span><select v-model="gatewayForm.kind" :disabled="gatewayForm.id > 0"><option value="sub2api">Sub2API</option><option value="cpa">CPA / CLIProxyAPI</option></select></label>
+          <label class="field"><span>显示名称</span><input v-model="gatewayForm.name" required /></label>
+          <label class="field field--wide"><span>网关管理地址</span><input v-model="gatewayForm.baseUrl" type="url" required placeholder="http://127.0.0.1:8080" /><small>{{ gatewayForm.kind === 'sub2api' ? 'Sub2API 需单独启动；本机 Docker 常用 http://127.0.0.1:8080，地址后不要添加 /api/v1/admin。' : '这是目标网关自己的管理入口。' }}远程地址需显式允许并使用 HTTPS。</small></label>
+          <label v-if="gatewayForm.kind === 'sub2api'" class="field field--wide"><span>管理密钥 <small>{{ gatewayForm.id ? '留空保持原密钥' : '写入后不再显示' }}</small></span><input v-model="gatewayForm.adminKey" type="password" autocomplete="new-password" :required="!gatewayForm.id" /><small>请在 Sub2API 后台的“系统设置 → Admin API Key”中创建；完整密钥只显示一次。</small></label>
+          <div v-else class="field field--wide gateway-form__legacy-note"><span>CPA 连接沿用“设置 → CPA 同步”中的管理密钥与授权目录；这里控制目标标记与启停，不代表自动故障转移。</span></div>
+          <label class="field"><span>默认分组 ID</span><input v-model="gatewayForm.groupIds" placeholder="3, 5" /><small>可留空，或填写以逗号分隔的正整数。</small></label>
+          <label class="field"><span>账号并发</span><input v-model.number="gatewayForm.concurrency" type="number" min="1" max="1000" step="1" required /></label>
+          <label class="field"><span>调度优先级</span><input v-model.number="gatewayForm.priority" type="number" min="-1000" max="1000" step="1" required /></label>
+          <label class="field"><span>成本倍率</span><input v-model.number="gatewayForm.rateMultiplier" type="number" min="0.01" max="1000" step="0.01" required /></label>
+        </div>
+        <div class="gateway-form__switches"><label class="check-row"><input v-model="gatewayForm.enabled" class="switch" type="checkbox" /><span><strong>启用目标</strong><small>允许部署和健康检查。</small></span></label><label class="check-row"><input v-model="gatewayForm.primary" class="switch" type="checkbox" /><span><strong>设为主网关</strong><small>仅标记首选目标；部署失败时不会自动切换网关。</small></span></label><label class="check-row"><input v-model="gatewayForm.allowRemote" class="switch" type="checkbox" /><span><strong>允许远程地址</strong><small>仅 HTTPS，密钥随管理请求发送。</small></span></label></div>
+        <div class="form-actions"><span class="security-note">管理密钥仅写入，不会从后端回显。</span><button class="button button--primary" type="submit" :disabled="savingGateway"><Save :size="16" />{{ savingGateway ? '保存中…' : '保存目标' }}</button></div>
       </form>
     </div>
   </div>

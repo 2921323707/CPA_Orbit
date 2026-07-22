@@ -1,6 +1,48 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestAccountPollMinutesPersistenceAndValidation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(path, []byte(`{"threshold":1,"refreshMinutes":5,"baseUrl":"http://127.0.0.1:8317/v1","themeMode":"auto"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := store.Get().AccountPollMinutes; got != 5 {
+		t.Fatalf("old settings accountPollMinutes = %d, want 5", got)
+	}
+	settings := store.Get()
+	settings.AccountPollMinutes = 0
+	if err := store.Update(settings); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := NewStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reloaded.Get().AccountPollMinutes; got != 0 {
+		t.Fatalf("explicit disabled accountPollMinutes = %d, want 0", got)
+	}
+	for _, value := range []int{-1, 1, 4, 1441} {
+		settings.AccountPollMinutes = value
+		if err := ValidateSettings(settings); err == nil {
+			t.Errorf("accountPollMinutes %d should be invalid", value)
+		}
+	}
+	for _, value := range []int{0, 5, 1440} {
+		settings.AccountPollMinutes = value
+		if err := ValidateSettings(settings); err != nil {
+			t.Errorf("accountPollMinutes %d should be valid: %v", value, err)
+		}
+	}
+}
 
 func TestValidateBaseURL(t *testing.T) {
 	tests := []struct {

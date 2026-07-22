@@ -2,7 +2,7 @@
 
 ## Supported version
 
-Security fixes target the latest release, currently **v1.2.0**, and the current `main` branch.
+Security fixes target the latest published release, currently **v1.3.0**, and the current `main` branch.
 
 ## Private reporting
 
@@ -18,10 +18,14 @@ Do not include real tokens, subscription archives, account identifiers, or third
 
 ## Secret-handling rules
 
-- Never commit `k12/**/*.json`, `cpa/auths/**`, `data/*.json`, local configuration, logs, or `.env*` files.
-- The browser must never receive stored CPA management keys, Luban API keys, access tokens, refresh tokens, or ID tokens.
+- Never commit `subscriptions/**/*.json`, `cpa/auths/**`, `data/*.json`, local configuration, logs, or `.env*` files. Provider/date archives and the local control-plane state belong in a protected backup, not a public artifact.
+- The browser must never receive stored Sub2API/CPA management keys, Luban API keys, access tokens, refresh tokens, or ID tokens. Keys are write-only in the UI and API.
+- Sub2API is an independently secured external service and is not bundled with CPA Orbit. Create its administrator key under **Sub2API System Settings → Admin API Key**, then save it through CPA Orbit's write-only gateway form.
+- Remote gateway management targets require explicit opt-in and HTTPS; loopback targets remain preferred. Official CPA Orbit artifacts embed neither Sub2API nor CLIProxyAPI.
+- Auth JSON goes through a local preflight and an explicit exactly-one compatible target selection; uncertain import outcomes stay on the selected target for reconciliation rather than triggering cross-target fallback.
 - External URLs must be validated, redirects restricted, response sizes bounded, and errors sanitized.
 - Imported filenames and archive paths must remain inside the intended project directories.
+- Backups should be encrypted and access-controlled. Local settings and credential files may remain plaintext on disk unless the host filesystem provides encryption; treat them accordingly.
 - Public screenshots and test fixtures must contain synthetic or fully redacted data.
 
 ## Scope

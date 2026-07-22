@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	DefaultURL = "https://priceai.cc/products/chatgpt-team-business?tags=team_k12&collector=liandongShop&max=5"
-	GPTPlusURL = "https://priceai.cc/products/chatgpt-plus?tags=account_unverified"
+	DefaultURL       = "https://priceai.cc/products/chatgpt-team-business?tags=team_k12&collector=liandongShop&max=5"
+	GPTPlusURL       = "https://priceai.cc/products/chatgpt-plus?tags=account_unverified"
+	K12MaxOfferPrice = 5.0
 )
 
 var (
@@ -26,7 +27,7 @@ var (
 	priceRE       = regexp.MustCompile(`[-+]?\d+(?:[.,]\d+)?`)
 	shopRE        = regexp.MustCompile(`(?i)链动小铺\s*/\s*([[:alnum:]_-]+)`)
 	unavailableRE = regexp.MustCompile(`(?i)售罄|无货|缺货|下架|停售|不可购买|已售完|out\s*of\s*stock|sold\s*out|(?:^|\D)(?:库存\s*)?0(?:\D|$)`)
-	relevantRE    = regexp.MustCompile(`(?i)k12|cpa|json|反代`)
+	relevantRE    = regexp.MustCompile(`(?i)k[\s_-]*12`)
 )
 
 type Client struct {
@@ -34,10 +35,13 @@ type Client struct {
 	HTTPClient *http.Client
 	RelevantRE *regexp.Regexp
 	MaxOffers  int
+	MaxPrice   float64
 }
 
 func NewClient() *Client {
-	return NewClientForURLWithLimit(DefaultURL, relevantRE, 5)
+	client := NewClientForURLWithLimit(DefaultURL, relevantRE, 5)
+	client.MaxPrice = K12MaxOfferPrice
+	return client
 }
 
 func NewGPTPlusClient() *Client {
@@ -70,11 +74,11 @@ func (c *Client) Fetch() ([]model.Offer, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("fetch offers: unexpected HTTP status %d", resp.StatusCode)
 	}
-	return ParseOffersWithFilterAndLimit(resp.Body, c.URL, c.RelevantRE, c.MaxOffers)
+	return ParseOffersWithFilterLimitAndMaxPrice(resp.Body, c.URL, c.RelevantRE, c.MaxOffers, c.MaxPrice)
 }
 
 func ParseOffers(r io.Reader, sourceURL string) ([]model.Offer, error) {
-	return ParseOffersWithFilter(r, sourceURL, relevantRE)
+	return ParseOffersWithFilterLimitAndMaxPrice(r, sourceURL, relevantRE, 10, K12MaxOfferPrice)
 }
 
 func ParseOffersWithFilter(r io.Reader, sourceURL string, relevant *regexp.Regexp) ([]model.Offer, error) {
@@ -82,6 +86,10 @@ func ParseOffersWithFilter(r io.Reader, sourceURL string, relevant *regexp.Regex
 }
 
 func ParseOffersWithFilterAndLimit(r io.Reader, sourceURL string, relevant *regexp.Regexp, maxOffers int) ([]model.Offer, error) {
+	return ParseOffersWithFilterLimitAndMaxPrice(r, sourceURL, relevant, maxOffers, 0)
+}
+
+func ParseOffersWithFilterLimitAndMaxPrice(r io.Reader, sourceURL string, relevant *regexp.Regexp, maxOffers int, maxPrice float64) ([]model.Offer, error) {
 	doc, err := goquery.NewDocumentFromReader(r)
 	if err != nil {
 		return nil, fmt.Errorf("parse offer HTML: %w", err)
@@ -103,7 +111,8 @@ func ParseOffersWithFilterAndLimit(r io.Reader, sourceURL string, relevant *rege
 		channel := cell(1)
 		title := cell(2)
 		price, ok := parsePrice(cell(3))
-		if !ok || (relevant != nil && !relevant.MatchString(title)) || unavailableRE.MatchString(stockText) {
+		if !ok || price <= 0 || (maxPrice > 0 && price > maxPrice) ||
+			(relevant != nil && !relevant.MatchString(title)) || unavailableRE.MatchString(stockText) {
 			return
 		}
 		link, exists := row.Find("a[href]").FilterFunction(func(_ int, s *goquery.Selection) bool {

@@ -1,0 +1,25 @@
+{
+  "type": "sub2api-data",
+  "version": 1,
+  "exported_at": "2026-07-22T00:00:00Z",
+  "proxies": [],
+  "accounts": [
+    {
+      "name": "fixture@example.com",
+      "platform": "openai",
+      "type": "oauth",
+      "credentials": {
+        "auth_mode": "agent_identity",
+        "email": "fixture@example.com",
+        "account_id": "acct-fixture-123",
+        "chatgpt_account_id": "chatgpt-fixture-123",
+        "agent_runtime_id": "runtime-fixture-123",
+        "agent_private_key": "fixture-private-key"
+      },
+      "extra": {"source": "integration-test"},
+      "concurrency": 2,
+      "priority": 3,
+      "rate_multiplier": 1
+    }
+  ]
+}

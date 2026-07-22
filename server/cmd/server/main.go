@@ -27,13 +27,14 @@ func main() {
 		defaultAddr = config.DefaultListenAddr
 	}
 	addr := flag.String("addr", defaultAddr, "HTTP listen address")
-	projectRoot := flag.String("project-root", defaultRoot, "project root containing data and k12 directories")
+	projectRoot := flag.String("project-root", defaultRoot, "project root containing data and subscriptions directories")
 	flag.Parse()
 
 	appRuntime, err := application.New(*projectRoot)
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer appRuntime.Close()
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	appRuntime.Start(ctx)

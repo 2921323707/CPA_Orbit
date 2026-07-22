@@ -1,0 +1,9 @@
+{
+  "provider": "codex",
+  "type": "oauth",
+  "email": "fixture@example.com",
+  "account_id": "acct-fixture-123",
+  "chatgpt_account_id": "chatgpt-fixture-123",
+  "access_token": "fixture-access-token",
+  "refresh_token": "fixture-refresh-token"
+}
