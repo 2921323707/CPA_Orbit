@@ -7,15 +7,15 @@
     <a href="http://165.154.205.54/cpa_orbit/">
       <img src="https://img.shields.io/badge/Documentation-Open_online_docs-0B6159?style=for-the-badge&amp;logo=readthedocs&amp;logoColor=white" alt="Open CPA Orbit online documentation" />
     </a>
-    <a href="https://github.com/2921323707/CPA_Orbit/releases/tag/v1.2.1">
-      <img src="https://img.shields.io/badge/Windows-Download_v1.2.1-2563EB?style=for-the-badge&amp;logo=windows11&amp;logoColor=white" alt="Download CPA Orbit v1.2.1 for Windows" />
+    <a href="https://github.com/2921323707/CPA_Orbit/releases/tag/v1.3.0">
+      <img src="https://img.shields.io/badge/Windows-Download_v1.3.0-2563EB?style=for-the-badge&amp;logo=windows11&amp;logoColor=white" alt="Download CPA Orbit v1.3.0 for Windows" />
     </a>
   </p>
   <p><sub>English · 简体中文 · Searchable guides · Architecture · Deployment · Release notes</sub></p>
 
   <p>
     <a href="https://github.com/2921323707/CPA_Orbit/actions"><img src="https://img.shields.io/badge/CI-configured-2088FF?style=flat-square&amp;logo=githubactions&amp;logoColor=white" alt="CI configured" /></a>
-		<a href="https://github.com/2921323707/CPA_Orbit/releases"><img src="https://img.shields.io/badge/next-v1.3.0-2563EB?style=flat-square" alt="Next version 1.3.0; latest published release 1.2.1" /></a>
+		<a href="https://github.com/2921323707/CPA_Orbit/releases"><img src="https://img.shields.io/badge/version-v1.3.0-2563EB?style=flat-square" alt="Version 1.3.0" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22C55E?style=flat-square" alt="MIT License" /></a>
     <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?style=flat-square&amp;logo=go&amp;logoColor=white" alt="Go 1.25 or newer" /></a>
     <a href="https://vuejs.org/"><img src="https://img.shields.io/badge/Vue-3.5-42B883?style=flat-square&amp;logo=vuedotjs&amp;logoColor=white" alt="Vue 3.5" /></a>

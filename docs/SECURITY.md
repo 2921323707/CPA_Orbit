@@ -2,7 +2,7 @@
 
 ## Supported version
 
-Security fixes target the latest published release, currently **v1.2.1**, and the current `main` branch. The v1.3.0 control-plane work remains unreleased until it is verified, tagged, and published.
+Security fixes target the latest published release, currently **v1.3.0**, and the current `main` branch.
 
 ## Private reporting
 

@@ -5,7 +5,7 @@ description: CPA Orbit 版本变化摘要。
 
 # 更新日志
 
-## 待发布 · v1.3.0
+## v1.3.0 · 2026-07-22
 
 - 新增可配置的本地 CPA 与通用 Sub2API companion，并确保每份逻辑凭据只分配给一个活动池。
 - 新增两阶段 Auth JSON 安全预检、显式唯一兼容目标选择，以及 pending/uncertain 待核对状态；不会跨目标自动兜底。

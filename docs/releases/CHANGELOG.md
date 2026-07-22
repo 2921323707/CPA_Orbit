@@ -4,6 +4,8 @@ All notable CPA Orbit changes are documented here. Versions follow Semantic Vers
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-07-22
+
 ### Added
 
 - Added configurable CPA and generic local Sub2API companion targets, managed/adopted bindings, and one logical credential assignment per active pool.
