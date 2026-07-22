@@ -31,11 +31,17 @@ type BindingRef struct {
 	TargetID    string `json:"targetId"`
 	ExternalID  string `json:"externalId"`
 	ExternalRef string `json:"externalRef,omitempty"`
+	Managed     bool   `json:"managed"`
 }
 
 type DeployOptions struct {
 	UpdateExisting bool
 	GroupIDs       []int64
+	Name           string
+	Notes          string
+	Concurrency    int
+	Priority       int
+	RateMultiplier float64
 }
 
 type DeploymentResult struct {

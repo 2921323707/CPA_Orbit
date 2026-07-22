@@ -136,7 +136,7 @@ func (c *Client) Deploy(ctx context.Context, credential gateways.Credential, _ g
 		return gateways.DeploymentResult{}, fmt.Errorf("save CPA managed-file manifest: %w", err)
 	}
 	c.invalidateAuthCacheLocked()
-	return gateways.DeploymentResult{Binding: gateways.BindingRef{ExternalID: filepath.Base(target), ExternalRef: target}, Status: "deployed"}, nil
+	return gateways.DeploymentResult{Binding: gateways.BindingRef{ExternalID: filepath.Base(target), ExternalRef: target, Managed: true}, Status: "deployed"}, nil
 }
 
 // Reconcile projects the supplied archive credentials and prunes only entries
