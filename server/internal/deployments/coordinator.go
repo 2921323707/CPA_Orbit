@@ -123,6 +123,28 @@ func (c *Coordinator) deployDefault(ctx context.Context, subscriptionID string) 
 	if err != nil {
 		return controlplane.DeploymentBinding{}, err
 	}
+	credential, err := c.source.GatewayCredential(subscriptionID)
+	if err != nil {
+		return controlplane.DeploymentBinding{}, err
+	}
+	if gateways.IsSub2APIDataPackage(credential.Data) {
+		var selected *controlplane.GatewayTarget
+		for i := range targets {
+			if !targets[i].Enabled || targets[i].Kind != string(gateways.KindSub2API) {
+				continue
+			}
+			if selected == nil || targets[i].Primary {
+				selected = &targets[i]
+			}
+			if targets[i].Primary {
+				break
+			}
+		}
+		if selected == nil {
+			return controlplane.DeploymentBinding{}, errors.New("no enabled Sub2API gateway target is configured")
+		}
+		return c.deploy(ctx, subscriptionID, selected.ID)
+	}
 	var primary *controlplane.GatewayTarget
 	for i := range targets {
 		if targets[i].Enabled && targets[i].Primary {
@@ -192,6 +214,12 @@ func (c *Coordinator) deploy(ctx context.Context, subscriptionID string, targetI
 	if target.Primary {
 		mode = "primary"
 	}
+	if strings.TrimSpace(credential.LogicalIdentity) != "" {
+		if err := c.store.ReserveCredentialAssignment(ctx, credential.LogicalIdentity, subscriptionID, targetID); err != nil {
+			_ = c.store.CompleteSyncOperation(ctx, operation.ID, "failed", cleanError(err.Error()))
+			return controlplane.DeploymentBinding{}, err
+		}
+	}
 	result, deployErr := adapter.Deploy(ctx, credential, gateways.DeployOptions{
 		UpdateExisting: true,
 		GroupIDs:       append([]int64(nil), target.DefaultGroupIDs...),
@@ -212,6 +240,9 @@ func (c *Coordinator) deploy(ctx context.Context, subscriptionID string, targetI
 		binding.ObservedState = "error"
 		binding.LastError = cleanError(deployErr.Error())
 		_, _ = c.store.UpsertDeploymentBinding(ctx, binding)
+		if strings.TrimSpace(credential.LogicalIdentity) != "" {
+			_ = c.store.CompleteCredentialAssignment(ctx, credential.LogicalIdentity, "failed", binding.LastError)
+		}
 		_ = c.store.CompleteSyncOperation(ctx, operation.ID, "failed", binding.LastError)
 		return controlplane.DeploymentBinding{}, deployErr
 	}
@@ -219,8 +250,17 @@ func (c *Coordinator) deploy(ctx context.Context, subscriptionID string, targetI
 	binding.LastError = ""
 	persisted, err := c.store.UpsertDeploymentBinding(ctx, binding)
 	if err != nil {
+		if strings.TrimSpace(credential.LogicalIdentity) != "" {
+			_ = c.store.CompleteCredentialAssignment(ctx, credential.LogicalIdentity, "failed", "persist binding failed")
+		}
 		_ = c.store.CompleteSyncOperation(ctx, operation.ID, "failed", "persist binding failed")
 		return controlplane.DeploymentBinding{}, err
+	}
+	if strings.TrimSpace(credential.LogicalIdentity) != "" {
+		if err := c.store.CompleteCredentialAssignment(ctx, credential.LogicalIdentity, "active", ""); err != nil {
+			_ = c.store.CompleteSyncOperation(ctx, operation.ID, "failed", "persist assignment failed")
+			return controlplane.DeploymentBinding{}, err
+		}
 	}
 	if err := c.store.CompleteSyncOperation(ctx, operation.ID, "succeeded", ""); err != nil {
 		return controlplane.DeploymentBinding{}, err
@@ -297,6 +337,11 @@ func (c *Coordinator) detach(ctx context.Context, subscriptionID string, targetI
 	persisted, err := c.store.UpsertDeploymentBinding(ctx, binding)
 	if err != nil {
 		return controlplane.DeploymentBinding{}, err
+	}
+	if strings.TrimSpace(credential.LogicalIdentity) != "" {
+		if err := c.store.CompleteCredentialAssignment(ctx, credential.LogicalIdentity, "released", ""); err != nil {
+			return controlplane.DeploymentBinding{}, err
+		}
 	}
 	_ = c.store.CompleteSyncOperation(ctx, operation.ID, "succeeded", "")
 	return persisted, nil
@@ -377,6 +422,13 @@ func (c *Coordinator) Inspect(ctx context.Context, subscriptionID string) (model
 		}
 	}
 	if selected == nil {
+		credential, credentialErr := c.source.GatewayCredential(subscriptionID)
+		if credentialErr != nil {
+			return model.Connectivity{}, credentialErr
+		}
+		if gateways.IsSub2APIDataPackage(credential.Data) {
+			return model.Connectivity{Status: "pending", ReasonCode: "sub2api_not_deployed", Error: "尚未部署到 Sub2API 号池", CheckedAt: time.Now()}, nil
+		}
 		return model.Connectivity{}, sql.ErrNoRows
 	}
 	target, err := c.store.GatewayTarget(ctx, selected.TargetID)

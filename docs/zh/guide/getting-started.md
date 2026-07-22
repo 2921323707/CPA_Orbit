@@ -18,8 +18,8 @@ description: 启动 CPA Orbit 并导入第一份订阅。
 | Go | 1.25 | Monitor API 与桌面宿主 |
 | Node.js | 20 | Vue 控制台构建 |
 | WebView2 | Windows 10/11 | 桌面端渲染 |
-| Sub2API | 推荐 | 主订阅号池、调度与用量记录 |
-| CLIProxyAPI | 可选 | 轻量 CPA 兜底 |
+| Sub2API | 可选 | 可配置的本地 Sub2API companion |
+| CLIProxyAPI | 可选 | 可配置的本地 CPA companion |
 
 ## 启动工作区
 
@@ -32,20 +32,22 @@ cd CPA_Orbit
 | 服务 | 本地地址 |
 |---|---|
 | Web 控制台 | `http://127.0.0.1:5173/` |
-| Monitor API | `http://127.0.0.1:8080/api` |
+| Monitor API | `http://127.0.0.1:8090/api` |
 | CLIProxyAPI | `http://127.0.0.1:8317/v1` |
 
-## 配置主号池
+## 配置网关 companion
 
-打开“号池运维”，新增 Sub2API 目标，写入管理员密钥并设为主网关。本机目标优先；远程目标必须显式允许并使用 HTTPS。归属、兜底、迁移和 Token 留存规则见 [Sub2API 订阅号池](/zh/guide/sub2api-pool)。
+打开“设置 → 网关”（`/settings?section=gateways`），配置本地 CPA 或通用本地 Sub2API companion。密钥只写不回显；远程地址必须显式允许并使用 HTTPS，本机地址优先。归档、显式分配和待确认状态见 [网关与订阅指南](/zh/guide/sub2api-pool)。
 
-## 配置 CPA 与导入
+## 配置与导入
 
 在“设置”中确认本地 `base_url`、`cpa/auths` 目录和 CLIProxyAPI 客户端密钥。保存后的密钥只由后端持有。
 
 ```text
-选择 JSON → 归档到 k12/MMDD → 部署到 Sub2API → 主池失败时尝试 CPA 兜底
+本地安全预检 → Provider/日期归档 → 明确选择唯一兼容的 CPA 或 Sub2API 目标
 ```
+
+部署处于 pending 或 uncertain 时保留待处理状态，不会自动切换到另一个目标。
 
 ::: warning 敏感文件
 CPA JSON 包含 bearer token。不要上传到 Issue、聊天、日志、截图或公开仓库。

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, Copy, ExternalLink, FileJson2, Globe2, KeyRound, Phone, RefreshCw, RotateCw, WalletCards, XCircle } from 'lucide-vue-next'
+import { Check, Copy, ExternalLink, Globe2, KeyRound, Phone, RefreshCw, RotateCw, WalletCards, XCircle } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useToast } from '../composables/useToast'
 import { api } from '../services/api'
@@ -153,19 +153,8 @@ onBeforeUnmount(clearSmsTimer)
 <template>
   <div class="page-stack">
     <div class="page-toolbar">
-      <div><p class="page-description">集中放置订阅 JSON 转换与鲁班接码工具。</p></div>
+      <div><p class="page-description">管理鲁班接码密钥、余额、服务价格与实时验证码。</p></div>
     </div>
-
-    <section class="panel">
-      <div class="panel__header"><div><h2>订阅 JSON 工具</h2><p>转换、整理账号 JSON 后，可回到订阅文件页面继续导入。</p></div></div>
-      <div class="import-tools toolbox-tools" aria-label="订阅 JSON 工具">
-        <a class="import-tool" href="https://cvt.okcode.cc.cd/" target="_blank" rel="noopener noreferrer">
-          <span class="import-tool__icon"><FileJson2 :size="19" /></span>
-          <span class="import-tool__copy"><strong>JSON 转换台</strong><small>打开转换台整理 CPA 订阅 JSON</small></span>
-          <ExternalLink :size="15" aria-hidden="true" />
-        </a>
-      </div>
-    </section>
 
     <section class="panel luban-panel">
       <div class="panel__header panel__header--wrap">

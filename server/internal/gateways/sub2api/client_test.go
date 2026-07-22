@@ -48,6 +48,73 @@ func TestDeployImportsCodexSessionWithAdminKey(t *testing.T) {
 	}
 }
 
+func TestDeployStripsLegacyBaseURLWithoutMutatingArchive(t *testing.T) {
+	credentialJSON := `{"access_token":"secret-access","base_url":"http://127.0.0.1:8317/v1"}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request CodexSessionImportRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		var imported map[string]any
+		if err := json.Unmarshal([]byte(request.Content), &imported); err != nil {
+			t.Fatal(err)
+		}
+		if _, exists := imported["base_url"]; exists {
+			t.Fatal("legacy CPA base_url was forwarded to Sub2API")
+		}
+		fmt.Fprint(w, `{"code":0,"data":{"total":1,"created":1,"failed":0,"items":[{"action":"created","account_id":42}]}}`)
+	}))
+	defer server.Close()
+
+	archived := []byte(credentialJSON)
+	client := NewClient(func() Config { return Config{BaseURL: server.URL, AdminKey: "key"} })
+	if _, err := client.Deploy(context.Background(), gateways.Credential{Data: archived}, gateways.DeployOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if string(archived) != credentialJSON {
+		t.Fatal("archived credential was mutated")
+	}
+}
+
+func TestDeployExpandsSingleAccountSub2APIData(t *testing.T) {
+	bundle := `{"exported_at":"2026-07-22T00:00:00Z","proxies":[],"accounts":[{"name":"agent@example.com","platform":"openai","type":"oauth","credentials":{"auth_mode":"agent_identity","email":"agent@example.com","agent_runtime_id":"runtime-1","agent_private_key":"private-key","account_id":"account-1","chatgpt_user_id":"user-1"},"extra":{"source":"import"},"concurrency":3,"priority":7,"rate_multiplier":1.25,"auto_pause_on_expired":true}]}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request CodexSessionImportRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		var content map[string]any
+		if err := json.Unmarshal([]byte(request.Content), &content); err != nil {
+			t.Fatal(err)
+		}
+		if content["auth_mode"] != "agent_identity" || content["agent_runtime_id"] != "runtime-1" || content["agent_private_key"] != "private-key" {
+			t.Fatalf("agent identity was not extracted: %#v", content)
+		}
+		if request.Name != "agent@example.com" || request.Concurrency != 3 || request.Priority != 7 || request.RateMultiplier != 1.25 || !request.AutoPauseOnExpired {
+			t.Fatalf("account settings were not retained: %+v", request)
+		}
+		fmt.Fprint(w, `{"code":0,"data":{"total":1,"created":1,"failed":0,"items":[{"action":"created","account_id":402}]}}`)
+	}))
+	defer server.Close()
+
+	client := NewClient(func() Config { return Config{BaseURL: server.URL, AdminKey: "key"} })
+	result, err := client.Deploy(context.Background(), gateways.Credential{SubscriptionID: "sub-agent", Data: []byte(bundle)}, gateways.DeployOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Binding.ExternalID != "402" {
+		t.Fatalf("unexpected binding: %+v", result)
+	}
+}
+
+func TestDeployRejectsMultiAccountSub2APIData(t *testing.T) {
+	bundle := []byte(`{"type":"sub2api-data","version":1,"accounts":[{"name":"one"},{"name":"two"}]}`)
+	client := NewClient(func() Config { return Config{BaseURL: "http://127.0.0.1:8080", AdminKey: "key"} })
+	if _, err := client.Deploy(context.Background(), gateways.Credential{Data: bundle}, gateways.DeployOptions{}); err == nil || !strings.Contains(err.Error(), "exactly one account") {
+		t.Fatalf("expected safe multi-account rejection, got %v", err)
+	}
+}
+
 func TestUsageRangeUsesSub2APIDateFormatAndUnwrapsPagination(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Query().Get("start_date"); got != "2026-07-21" {

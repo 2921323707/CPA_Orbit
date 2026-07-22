@@ -2,7 +2,6 @@ package subscriptions
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -55,6 +54,7 @@ type PageResult struct {
 
 type SubscriptionInsights struct {
 	Normal       int     `json:"normal"`
+	Pending      int     `json:"pending"`
 	Error        int     `json:"error"`
 	Priced       int     `json:"priced"`
 	TotalCost    float64 `json:"totalCost"`
@@ -66,22 +66,44 @@ type ImportOptions struct {
 	OrderURL         string
 	BaseURL          string
 	AcquisitionPrice string
+	ArchiveProvider  string
 	SkipLegacySync   bool
 }
 
+const (
+	defaultArchiveProvider = "sub2api"
+	cpaArchiveProvider     = "cpa"
+)
+
 type Manager struct {
-	mu         sync.RWMutex
-	root       string
-	checksPath string
-	settings   *config.Store
-	items      map[string]model.Subscription
-	checks     map[string]model.Connectivity
-	importMu   sync.Mutex
-	cpa        *cpagateway.Client
+	mu          sync.RWMutex
+	root        string
+	checksPath  string
+	pathIDs     map[string]string
+	pathIDsPath string
+	settings    *config.Store
+	items       map[string]model.Subscription
+	checks      map[string]model.Connectivity
+	importMu    sync.Mutex
+	cpa         *cpagateway.Client
 }
 
 func NewManager(root, checksPath string, settings *config.Store) (*Manager, error) {
-	m := &Manager{root: root, checksPath: checksPath, settings: settings, items: make(map[string]model.Subscription), checks: make(map[string]model.Connectivity)}
+	for _, provider := range []string{defaultArchiveProvider, cpaArchiveProvider} {
+		if err := os.MkdirAll(filepath.Join(root, provider), 0o700); err != nil {
+			return nil, fmt.Errorf("create %s subscription archive: %w", provider, err)
+		}
+	}
+	pathIDsPath := filepath.Join(filepath.Dir(checksPath), "subscription_path_migrations.json")
+	pathIDs := make(map[string]string)
+	if _, err := os.Stat(pathIDsPath); err == nil {
+		if err := storage.LoadJSON(pathIDsPath, &pathIDs); err != nil {
+			return nil, fmt.Errorf("load subscription path migrations: %w", err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("inspect subscription path migrations: %w", err)
+	}
+	m := &Manager{root: root, checksPath: checksPath, pathIDs: pathIDs, pathIDsPath: pathIDsPath, settings: settings, items: make(map[string]model.Subscription), checks: make(map[string]model.Connectivity)}
 	m.cpa = cpagateway.NewClient(func() cpagateway.Config {
 		current := settings.Get()
 		return cpagateway.Config{BaseURL: current.BaseURL, ManagementKey: current.CPAManagementKey, AuthDir: current.CPAAuthDir, SyncEnabled: current.SyncToCPAAuthDir}
@@ -92,32 +114,10 @@ func NewManager(root, checksPath string, settings *config.Store) (*Manager, erro
 	if err := m.Scan(); err != nil {
 		return nil, err
 	}
-	if err := m.ReconcileRuntime(); err != nil {
-		return nil, err
-	}
+	// Runtime bindings, not archive discovery, own gateway projection. Startup
+	// must not republish every archived credential into CPA or create a second
+	// active pool behind the control plane.
 	return m, nil
-}
-
-// ReconcileRuntime projects archives to CPA while preserving files not owned by Orbit.
-func (m *Manager) ReconcileRuntime() error {
-	settings := m.settings.Get()
-	if !settings.SyncToCPAAuthDir || config.ValidateCPAAuthDir(settings.CPAAuthDir) != nil {
-		return nil
-	}
-	items := m.List("", "", "")
-	credentials := make([]gateways.Credential, 0, len(items))
-	for _, item := range items {
-		path, err := safeArchivedPath(m.root, item.RelativePath)
-		if err != nil {
-			return err
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("read subscription %s for runtime sync: %w", item.RelativePath, err)
-		}
-		credentials = append(credentials, gatewayCredential(item, data))
-	}
-	return m.cpa.Reconcile(context.Background(), credentials)
 }
 
 func (m *Manager) Scan() error {
@@ -152,11 +152,15 @@ func (m *Manager) Scan() error {
 		if err != nil {
 			return nil
 		}
+		isSub2APIData := gateways.IsSub2APIDataPackage(data)
 		sub, err := ParseJSON(data, rel, time.Now())
 		if err != nil {
 			return nil
 		}
-		if check, ok := checks[sub.ID]; ok {
+		if migratedID := m.pathIDs[filepath.ToSlash(rel)]; migratedID != "" {
+			sub.ID = migratedID
+		}
+		if check, ok := checks[sub.ID]; ok && !(isSub2APIData && isLegacyCPAOnlyCheck(check)) {
 			sub.Connectivity = check
 		}
 		items[sub.ID] = sub
@@ -210,9 +214,12 @@ func (m *Manager) Page(folder, category, search string, page, pageSize int) Page
 func subscriptionInsights(items []model.Subscription) SubscriptionInsights {
 	var result SubscriptionInsights
 	for _, item := range items {
-		if subscriptionCategory(item) == "normal" {
+		switch subscriptionCategory(item) {
+		case "normal":
 			result.Normal++
-		} else {
+		case "pending":
+			result.Pending++
+		default:
 			result.Error++
 		}
 		if item.AcquisitionPrice != nil {
@@ -288,7 +295,17 @@ func subscriptionCategory(item model.Subscription) string {
 	if item.Connectivity.Status == "ok" {
 		return "normal"
 	}
+	status := strings.ToLower(strings.TrimSpace(item.Connectivity.Status))
+	if status == "" || status == "unknown" || status == "pending" {
+		return "pending"
+	}
 	return "error"
+}
+
+func isLegacyCPAOnlyCheck(check model.Connectivity) bool {
+	status := strings.ToLower(strings.TrimSpace(check.Status))
+	reason := strings.ToLower(strings.TrimSpace(check.ReasonCode))
+	return status == "not_in_cpa_pool" || reason == "not_in_cpa_pool"
 }
 
 func (m *Manager) Get(id string) (model.Subscription, bool) {
@@ -296,6 +313,12 @@ func (m *Manager) Get(id string) (model.Subscription, bool) {
 	defer m.mu.RUnlock()
 	item, ok := m.items[id]
 	return item, ok
+}
+
+// ExactDuplicate reports an existing archive with identical canonical JSON.
+// It never exposes or compares credential values outside the manager.
+func (m *Manager) ExactDuplicate(data []byte) (model.Subscription, bool, error) {
+	return m.duplicateSubscription(data)
 }
 
 func (m *Manager) duplicateSubscription(data []byte) (model.Subscription, bool, error) {
@@ -340,7 +363,7 @@ func jsonFingerprint(data []byte) (string, error) {
 // Import keeps the legacy argument shape for callers outside the HTTP layer.
 // New imports should use ImportWithOptions so only supported metadata is accepted.
 func (m *Manager) Import(data []byte, originalName, orderURL, baseURL string) (model.Subscription, bool, error) {
-	return m.ImportWithOptions(data, originalName, ImportOptions{OrderURL: orderURL, BaseURL: baseURL})
+	return m.ImportWithOptions(data, originalName, ImportOptions{OrderURL: orderURL, BaseURL: baseURL, ArchiveProvider: cpaArchiveProvider})
 }
 
 func (m *Manager) ImportWithOptions(data []byte, originalName string, options ImportOptions) (model.Subscription, bool, error) {
@@ -388,8 +411,7 @@ func (m *Manager) ImportWithOptions(data []byte, originalName string, options Im
 		return model.Subscription{}, false, err
 	}
 	encoded = append(encoded, '\n')
-	settings := m.settings.Get()
-	folder, err := m.archiveFolder(time.Now())
+	folder, err := m.archiveFolder(normalizeArchiveProvider(options.ArchiveProvider), time.Now())
 	if err != nil {
 		return model.Subscription{}, false, err
 	}
@@ -407,35 +429,7 @@ func (m *Manager) ImportWithOptions(data []byte, originalName string, options Im
 	if !ok {
 		return model.Subscription{}, false, errors.New("imported subscription was not found after archive scan")
 	}
-	synced := false
-	if settings.SyncToCPAAuthDir && !options.SkipLegacySync {
-		if _, err := m.cpa.Deploy(context.Background(), gatewayCredential(sub, encoded), gateways.DeployOptions{}); err != nil {
-			return sub, false, fmt.Errorf("subscription archived but CPA auth-dir sync failed: %w", err)
-		}
-		synced = true
-	}
-	return sub, synced, nil
-}
-
-func (m *Manager) Sync(id string) (string, error) {
-	sub, ok := m.Get(id)
-	if !ok {
-		return "", os.ErrNotExist
-	}
-	settings := m.settings.Get()
-	if err := config.ValidateCPAAuthDir(settings.CPAAuthDir); err != nil {
-		return "", err
-	}
-	path, err := safeArchivedPath(m.root, sub.RelativePath)
-	if err != nil {
-		return "", err
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	result, err := m.cpa.Deploy(context.Background(), gatewayCredential(sub, data), gateways.DeployOptions{UpdateExisting: true})
-	return result.Binding.ExternalRef, err
+	return sub, false, nil
 }
 
 func (m *Manager) GatewayCredential(id string) (gateways.Credential, error) {
@@ -467,21 +461,17 @@ func (m *Manager) Delete(id string) error {
 	if err != nil {
 		return err
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	if m.cpa != nil {
-		if err := m.cpa.Detach(context.Background(), gateways.BindingRef{}, gatewayCredential(sub, data)); err != nil {
-			return fmt.Errorf("cannot delete runtime copy safely: %w", err)
-		}
-	}
 	if err := os.Remove(path); err != nil {
 		return err
 	}
 	m.mu.Lock()
 	delete(m.items, id)
 	delete(m.checks, id)
+	for relativePath, migratedID := range m.pathIDs {
+		if migratedID == id {
+			delete(m.pathIDs, relativePath)
+		}
+	}
 	checks := make(map[string]model.Connectivity, len(m.checks))
 	for key, check := range m.checks {
 		checks[key] = check
@@ -490,20 +480,12 @@ func (m *Manager) Delete(id string) error {
 	if err := storage.SaveJSON(m.checksPath, checks); err != nil {
 		return fmt.Errorf("subscription deleted but connectivity state cleanup failed: %w", err)
 	}
+	if m.pathIDsPath != "" {
+		if err := storage.SaveJSON(m.pathIDsPath, m.pathIDs); err != nil {
+			return fmt.Errorf("subscription deleted but path migration cleanup failed: %w", err)
+		}
+	}
 	return nil
-}
-
-func (m *Manager) Test(ctx context.Context, id string) (model.Connectivity, error) {
-	sub, ok := m.Get(id)
-	if !ok {
-		return model.Connectivity{}, os.ErrNotExist
-	}
-	result, err := m.cpa.Inspect(ctx, gateways.BindingRef{}, gatewayCredential(sub, nil))
-	if err != nil {
-		return model.Connectivity{}, err
-	}
-	m.saveCheck(id, result.Connectivity)
-	return result.Connectivity, nil
 }
 
 func matchCPAAuth(entries []cpaAuthEntry, sub model.Subscription) (cpaAuthEntry, string) {
@@ -537,12 +519,19 @@ func modelsEndpoint(base string) string {
 	return strings.TrimRight(base, "/") + "/v1/models"
 }
 
-func (m *Manager) archiveFolder(now time.Time) (string, error) {
+func normalizeArchiveProvider(provider string) string {
+	if strings.EqualFold(strings.TrimSpace(provider), cpaArchiveProvider) {
+		return cpaArchiveProvider
+	}
+	return defaultArchiveProvider
+}
+
+func (m *Manager) archiveFolder(provider string, now time.Time) (string, error) {
 	rootResolved, err := filepath.Abs(m.root)
 	if err != nil {
 		return "", err
 	}
-	folder := filepath.Join(rootResolved, now.Format("0102"))
+	folder := filepath.Join(rootResolved, normalizeArchiveProvider(provider), now.Format("0102"))
 	if info, err := os.Lstat(folder); err == nil && info.Mode()&os.ModeSymlink != 0 {
 		return "", errors.New("archive date folder cannot be a symbolic link")
 	}
@@ -602,7 +591,11 @@ func syncBytesToAuthDir(data []byte, email, authDir string) (string, error) {
 }
 
 func gatewayCredential(sub model.Subscription, data []byte) gateways.Credential {
-	return gateways.Credential{SubscriptionID: sub.ID, Data: data, Email: sub.Email, AccountID: sub.AccountID, ChatGPTAccountID: sub.ChatGPTAccountID, Provider: firstNonEmpty(sub.Provider, sub.Type)}
+	credential := gateways.Credential{SubscriptionID: sub.ID, Data: data, Email: sub.Email, AccountID: sub.AccountID, ChatGPTAccountID: sub.ChatGPTAccountID, Provider: firstNonEmpty(sub.Provider, sub.Type)}
+	if analysis, err := AnalyzeAuthJSON(data); err == nil {
+		credential.LogicalIdentity = analysis.Identity.LogicalID
+	}
+	return credential
 }
 
 func nonEmptySet(values ...string) map[string]struct{} {

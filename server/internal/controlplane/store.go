@@ -14,7 +14,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 2
+const schemaVersion = 3
 
 type GatewayTarget struct {
 	ID                 int64     `json:"id"`
@@ -48,6 +48,26 @@ type DeploymentBinding struct {
 	LastSyncedAt          *time.Time `json:"lastSyncedAt,omitempty"`
 	CreatedAt             time.Time  `json:"createdAt"`
 	UpdatedAt             time.Time  `json:"updatedAt"`
+}
+
+type ImportOperation struct {
+	ID             string
+	Digest         string
+	TargetID       int64
+	Status         string
+	SubscriptionID string
+	LastError      string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+type CredentialAssignment struct {
+	LogicalID      string    `json:"logicalId"`
+	TargetID       int64     `json:"targetId"`
+	SubscriptionID string    `json:"subscriptionId"`
+	Status         string    `json:"status"`
+	LastError      string    `json:"lastError,omitempty"`
+	UpdatedAt      time.Time `json:"updatedAt"`
 }
 
 type SyncOperation struct {
@@ -128,6 +148,91 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+func (s *Store) ImportOperation(ctx context.Context, opID string) (ImportOperation, error) {
+	var op ImportOperation
+	var created, updated string
+	err := s.db.QueryRowContext(ctx, `SELECT op_id, digest, target_id, status, subscription_id, last_error, created_at, updated_at FROM import_operations WHERE op_id=?`, opID).
+		Scan(&op.ID, &op.Digest, &op.TargetID, &op.Status, &op.SubscriptionID, &op.LastError, &created, &updated)
+	if err != nil {
+		return ImportOperation{}, err
+	}
+	op.CreatedAt, op.UpdatedAt = mustTime(created), mustTime(updated)
+	return op, nil
+}
+
+func (s *Store) ReserveImportOperation(ctx context.Context, op ImportOperation) (ImportOperation, bool, error) {
+	if strings.TrimSpace(op.ID) == "" || strings.TrimSpace(op.Digest) == "" || op.TargetID <= 0 {
+		return ImportOperation{}, false, errors.New("invalid import operation")
+	}
+	now := time.Now().UTC()
+	result, err := s.db.ExecContext(ctx, `INSERT INTO import_operations (op_id,digest,target_id,status,subscription_id,last_error,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(op_id) DO NOTHING`, op.ID, op.Digest, op.TargetID, defaultString(op.Status, "running"), op.SubscriptionID, op.LastError, formatTime(now), formatTime(now))
+	if err != nil {
+		return ImportOperation{}, false, err
+	}
+	created, _ := result.RowsAffected()
+	stored, err := s.ImportOperation(ctx, op.ID)
+	return stored, created == 1, err
+}
+
+func (s *Store) CompleteImportOperation(ctx context.Context, opID, status, subscriptionID, lastError string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE import_operations SET status=?, subscription_id=?, last_error=?, updated_at=? WHERE op_id=?`, status, subscriptionID, lastError, formatTime(time.Now().UTC()), opID)
+	return err
+}
+
+func (s *Store) ReserveCredentialAssignment(ctx context.Context, logicalID, subscriptionID string, targetID int64) error {
+	logicalID, subscriptionID = strings.TrimSpace(logicalID), strings.TrimSpace(subscriptionID)
+	if logicalID == "" || subscriptionID == "" || targetID <= 0 {
+		return errors.New("invalid credential assignment")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin credential assignment: %w", err)
+	}
+	defer tx.Rollback()
+	now := formatTime(time.Now().UTC())
+	if _, err := tx.ExecContext(ctx, `INSERT INTO credential_assignments (logical_id,target_id,subscription_id,status,last_error,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(logical_id) DO UPDATE SET target_id=excluded.target_id, subscription_id=excluded.subscription_id, status=excluded.status, last_error=excluded.last_error, updated_at=excluded.updated_at WHERE (credential_assignments.target_id=excluded.target_id AND credential_assignments.subscription_id=excluded.subscription_id) OR credential_assignments.status IN ('failed','released')`, logicalID, targetID, subscriptionID, "reserved", "", now); err != nil {
+		return fmt.Errorf("reserve credential assignment: %w", err)
+	}
+	var assigned int64
+	var assignedSubscription string
+	if err := tx.QueryRowContext(ctx, `SELECT target_id, subscription_id FROM credential_assignments WHERE logical_id=?`, logicalID).Scan(&assigned, &assignedSubscription); err != nil {
+		return fmt.Errorf("read credential assignment: %w", err)
+	}
+	if assigned != targetID || assignedSubscription != subscriptionID {
+		return fmt.Errorf("credential is assigned to another gateway target")
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit credential assignment: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) CompleteCredentialAssignment(ctx context.Context, logicalID, status, lastError string) error {
+	logicalID = strings.TrimSpace(logicalID)
+	if logicalID == "" || strings.TrimSpace(status) == "" {
+		return errors.New("invalid credential assignment completion")
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE credential_assignments SET status=?, last_error=?, updated_at=? WHERE logical_id=?`, strings.TrimSpace(status), lastError, formatTime(time.Now().UTC()), logicalID)
+	if err != nil {
+		return err
+	}
+	if count, _ := result.RowsAffected(); count == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) CredentialAssignment(ctx context.Context, logicalID string) (CredentialAssignment, error) {
+	var assignment CredentialAssignment
+	var updated string
+	err := s.db.QueryRowContext(ctx, `SELECT logical_id, target_id, subscription_id, status, last_error, updated_at FROM credential_assignments WHERE logical_id=?`, strings.TrimSpace(logicalID)).Scan(&assignment.LogicalID, &assignment.TargetID, &assignment.SubscriptionID, &assignment.Status, &assignment.LastError, &updated)
+	if err != nil {
+		return CredentialAssignment{}, err
+	}
+	assignment.UpdatedAt = mustTime(updated)
+	return assignment, nil
+}
+
 func (s *Store) migrate(ctx context.Context) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -181,6 +286,25 @@ func (s *Store) migrate(ctx context.Context) error {
 			completed_at TEXT
 		)`,
 		`CREATE INDEX IF NOT EXISTS sync_operations_status_idx ON sync_operations(status, created_at)`,
+		`CREATE TABLE IF NOT EXISTS import_operations (
+				op_id TEXT PRIMARY KEY,
+				digest TEXT NOT NULL,
+				target_id INTEGER NOT NULL REFERENCES gateway_targets(id) ON DELETE RESTRICT,
+				status TEXT NOT NULL,
+				subscription_id TEXT NOT NULL DEFAULT '',
+				last_error TEXT NOT NULL DEFAULT '',
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			)`,
+		`CREATE TABLE IF NOT EXISTS credential_assignments (
+			logical_id TEXT PRIMARY KEY,
+			target_id INTEGER NOT NULL REFERENCES gateway_targets(id) ON DELETE RESTRICT,
+			subscription_id TEXT NOT NULL,
+			status TEXT NOT NULL CHECK(status IN ('reserved','active','failed','released')),
+			last_error TEXT NOT NULL DEFAULT '',
+			updated_at TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS credential_assignments_target_idx ON credential_assignments(target_id, status)`,
 		`CREATE TABLE IF NOT EXISTS usage_buckets (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			target_id INTEGER NOT NULL REFERENCES gateway_targets(id) ON DELETE CASCADE,

@@ -1,72 +1,96 @@
 import { expect, test, type Page } from '@playwright/test'
 
 async function mockOrbitApi(page: Page) {
-  let importRequests = 0
-  const importPrices: Array<string | null> = []
-	const importDeployments: Array<string | null> = []
+  let preflightRequests = 0
+  let commitRequests = 0
+  let legacyImportRequests = 0
+  const commitPrices: Array<string | null> = []
+  const commitTargets: Array<string | null> = []
+  const commitTokens: Array<string | undefined> = []
 
   await page.route('**/api/**', async (route) => {
     const request = route.request()
-    const path = new URL(request.url()).pathname
+    const url = new URL(request.url())
+    const path = url.pathname
 
-    if (path.endsWith('/api/health')) {
-      return route.fulfill({ json: { status: 'ok', name: 'CPA Orbit' } })
+    if (path.endsWith('/api/health')) return route.fulfill({ json: { status: 'ok', name: 'CPA Orbit' } })
+    if (path.endsWith('/api/cpa/status')) return route.fulfill({ json: { online: true, authFileCount: 2, baseUrl: 'http://127.0.0.1:8317/v1' } })
+    if (path.endsWith('/api/settings')) return route.fulfill({ json: { themeMode: 'light', baseUrl: 'http://127.0.0.1:8317/v1' } })
+    if (path.endsWith('/api/subscriptions/import/preflight') && request.method() === 'POST') {
+      preflightRequests += 1
+      return route.fulfill({ json: {
+        operationId: `operation-${preflightRequests}`,
+        expiresAt: '2026-07-22T12:05:00Z',
+        preflightToken: `signed-token-${preflightRequests}`,
+        analysis: {
+          version: 'orbit-auth-v1', format: 'cpa-auth', digest: 'sha256:test',
+          identity: { provider: 'codex', type: 'codex', email: 'e***@example.invalid', accountId: 'ac***01', recognizedFields: ['account_id', 'email', 'type'] },
+          compatibility: { cpa: { compatible: true, reasonCode: 'compatible_cpa_auth' }, sub2api: { compatible: true, reasonCode: 'compatible_codex_session' } },
+        },
+        targets: [
+          { targetId: 11, kind: 'sub2api', name: 'Primary Sub2API', enabled: true, compatible: true, reasonCode: 'compatible_codex_session' },
+          { targetId: 12, kind: 'cpa', name: 'CPA companion', enabled: true, compatible: true, reasonCode: 'compatible_cpa_auth' },
+        ],
+      } })
     }
-    if (path.endsWith('/api/cpa/status')) {
-      return route.fulfill({ json: { online: true, authFileCount: 2, baseUrl: 'http://127.0.0.1:8317/v1' } })
-    }
-    if (path.endsWith('/api/settings')) {
-      return route.fulfill({ json: { themeMode: 'light', baseUrl: 'http://127.0.0.1:8317/v1' } })
+    if (path.endsWith('/api/subscriptions/import/commit') && request.method() === 'POST') {
+      commitRequests += 1
+      commitPrices.push(url.searchParams.get('acquisitionPrice'))
+      commitTargets.push(url.searchParams.get('targetId'))
+      commitTokens.push(request.headers()['x-orbit-preflight-token'])
+      return route.fulfill({ status: 201, json: { subscription: { id: 'imported', email: 'e2e@example.invalid' }, deployment: { id: 1, subscriptionId: 'imported', targetId: Number(url.searchParams.get('targetId')), mode: 'primary', ownership: 'managed', desiredState: 'active', observedState: 'active' }, idempotent: false } })
     }
     if (path.endsWith('/api/subscriptions/import') && request.method() === 'POST') {
-      importRequests += 1
-      importPrices.push(new URL(request.url()).searchParams.get('acquisitionPrice'))
-		importDeployments.push(new URL(request.url()).searchParams.get('deploy'))
-      return route.fulfill({ status: 200, json: { message: 'Imported' } })
+      legacyImportRequests += 1
+      return route.fulfill({ status: 410, json: { message: 'legacy endpoint must not be called' } })
     }
+    if (path.endsWith('/api/subscriptions/poll-status')) return route.fulfill({ json: { enabled: true, running: false, intervalMinutes: 5, totalAccounts: 0, completed: 0, succeeded: 0, failed: 0, runsStarted: 0, runsCompleted: 0 } })
+    if (path.endsWith('/api/gateways/targets')) return route.fulfill({ json: { targets: [] } })
     if (path.endsWith('/api/subscriptions') && request.method() === 'GET') {
-      return route.fulfill({
-        json: {
-          subscriptions: [], total: 0, page: 1, pageSize: 10, totalPages: 0, folders: [],
-          insights: { normal: 1, error: 0, priced: 1, totalCost: 12.34, averageCost: 12.34, expiringSoon: 0 },
-        },
-      })
+      return route.fulfill({ json: { subscriptions: [], total: 0, page: 1, pageSize: 10, totalPages: 0, folders: [], insights: { normal: 0, pending: 0, error: 0, priced: 0, totalCost: 0, averageCost: 0, expiringSoon: 0 } } })
     }
 
     return route.fulfill({ status: 404, json: { message: `Unhandled test route: ${path}` } })
   })
 
   return {
-    count: () => importRequests,
-    prices: () => [...importPrices],
-		deployments: () => [...importDeployments],
+    preflights: () => preflightRequests,
+    commits: () => commitRequests,
+    legacyImports: () => legacyImportRequests,
+    prices: () => [...commitPrices],
+    targets: () => [...commitTargets],
+    tokens: () => [...commitTokens],
   }
 }
 
-test('single-file import proceeds without a blocking browser dialog', async ({ page }) => {
+test('single-file import requires preflight and one explicit compatible target', async ({ page }) => {
   const imports = await mockOrbitApi(page)
-  const dialogs: string[] = []
-  page.on('dialog', async (dialog) => {
-    dialogs.push(dialog.message())
-    await dialog.dismiss()
-  })
 
   await page.goto('/subscriptions')
   await page.locator('input[type="file"]').setInputFiles({
     name: 'e2e-subscription.json',
     mimeType: 'application/json',
-    buffer: Buffer.from(JSON.stringify({ type: 'codex', email: 'e2e@example.invalid', access_token: 'test-only' })),
+    buffer: Buffer.from(`﻿${JSON.stringify({ type: 'codex', email: 'e2e@example.invalid', access_token: 'test-only' })}`),
   })
-  await page.getByRole('button', { name: '导入并部署' }).click()
 
-  await expect.poll(imports.count).toBe(1)
-  await expect(page.getByText('导入完成：成功 1 · 失败 0')).toBeVisible()
-  expect(imports.prices()).toEqual([null])
-	expect(imports.deployments()).toEqual(['true'])
-  expect(dialogs).toEqual([])
+  await expect.poll(imports.preflights).toBe(1)
+  await expect(page.getByText('e***@example.invalid')).toBeVisible()
+  await expect(page.getByText('account_id', { exact: true })).toBeVisible()
+  await expect(page.getByText('compatible_codex_session')).toBeVisible()
+  const commit = page.getByRole('button', { name: '确认归档并部署' })
+  await expect(commit).toBeDisabled()
+  await page.getByRole('radio', { name: /Primary Sub2API/ }).check()
+  await expect(commit).toBeEnabled()
+  await commit.click()
+
+  await expect.poll(imports.commits).toBe(1)
+  await expect(page.getByText('导入提交完成：成功 1 · 失败 0')).toBeVisible()
+  expect(imports.targets()).toEqual(['11'])
+  expect(imports.tokens()).toEqual(['signed-token-1'])
+  expect(imports.legacyImports()).toBe(0)
 })
 
-test('single-file import with a price completes without mixed multipart fields', async ({ page }) => {
+test('single-file commit sends acquisition price outside file-only multipart', async ({ page }) => {
   const imports = await mockOrbitApi(page)
 
   await page.goto('/subscriptions')
@@ -75,44 +99,53 @@ test('single-file import with a price completes without mixed multipart fields',
     mimeType: 'application/json',
     buffer: Buffer.from(JSON.stringify({ type: 'codex', email: 'priced@example.invalid', access_token: 'test-only' })),
   })
+  await expect.poll(imports.preflights).toBe(1)
   await page.getByRole('spinbutton', { name: '入手价格 可选' }).fill('12.34')
-  await page.getByRole('button', { name: '导入并部署' }).click()
+  await page.getByRole('radio', { name: /CPA companion/ }).check()
+  await page.getByRole('button', { name: '确认归档并部署' }).click()
 
-  await expect.poll(imports.count).toBe(1)
-  await expect(page.getByText('导入完成：成功 1 · 失败 0')).toBeVisible()
-  await expect(page.getByRole('button', { name: '导入中…' })).toHaveCount(0)
-  await expect(page.getByText('¥12.34')).toHaveCount(2)
+  await expect.poll(imports.commits).toBe(1)
+  await expect(page.getByText('导入提交完成：成功 1 · 失败 0')).toBeVisible()
   expect(imports.prices()).toEqual(['12.34'])
-	expect(imports.deployments()).toEqual(['true'])
+  expect(imports.targets()).toEqual(['12'])
+  expect(imports.legacyImports()).toBe(0)
 })
 
-test('operations page shows Sub2API primary, CPA fallback, and token telemetry', async ({ page }) => {
-	await page.route('**/api/**', async (route) => {
-		const path = new URL(route.request().url()).pathname
-		if (path.endsWith('/api/health')) return route.fulfill({ json: { status: 'ok', name: 'CPA Orbit' } })
-		if (path.endsWith('/api/cpa/status')) return route.fulfill({ json: { online: true, authFileCount: 2 } })
-		if (path.endsWith('/api/settings')) return route.fulfill({ json: { themeMode: 'light' } })
-		if (path.endsWith('/api/gateways/overview')) return route.fulfill({ json: {
-			targets: [
-				{ target: { id: 1, kind: 'sub2api', name: '主号池', baseUrl: 'http://127.0.0.1:8080', enabled: true, primary: true, allowRemote: false, defaultConcurrency: 2, defaultPriority: 0, rateMultiplier: 1, adminKeyConfigured: true }, health: { status: 'ok', latencyMs: 12 } },
-				{ target: { id: 2, kind: 'cpa', name: 'CPA 备份', baseUrl: 'http://127.0.0.1:8317/v1', enabled: true, primary: false, allowRemote: false, defaultConcurrency: 1, defaultPriority: 0, rateMultiplier: 1 }, health: { status: 'ok', latencyMs: 8 } },
-			],
-			bindings: [{ id: 1, subscriptionId: 'plus@example.invalid', targetId: 1, mode: 'primary', ownership: 'managed', desiredState: 'active', observedState: 'active' }],
-			operations: [{ id: 1, subscriptionId: 'plus@example.invalid', targetId: 1, kind: 'deploy', status: 'succeeded', attempt: 1, createdAt: '2026-07-22T08:00:00Z' }],
-			snapshots: [{ targetId: 1, data: { stats: { today_tokens: 3456, today_requests: 18, today_actual_cost: 0.42 } }, stale: false, lastAttemptAt: '2026-07-22T08:00:00Z' }], checkedAt: '2026-07-22T08:00:00Z',
-		} })
-		if (path.endsWith('/api/gateways/usage')) return route.fulfill({ json: { buckets: [{ id: 1, targetId: 1, bucketAt: '2026-07-22T08:00:00Z', bucketMinutes: 15, requests: 18, successes: 18, failures: 0, inputTokens: 2000, outputTokens: 1000, cacheCreationTokens: 0, cacheReadTokens: 456, cost: 0.5, actualCost: 0.42, averageDurationMs: 800, firstTokenMs: 220 }], snapshots: [], from: '2026-07-15T00:00:00Z', to: '2026-07-22T00:00:00Z' } })
-		return route.fulfill({ status: 404, json: { message: `Unhandled test route: ${path}` } })
-	})
-
-	await page.goto('/operations')
-	await expect(page.getByRole('heading', { name: '订阅号池运行台' })).toBeVisible()
-	await expect(page.getByLabel('运行指标').getByText('3,456', { exact: true })).toBeVisible()
-	await expect(page.getByText('主号池')).toBeVisible()
-	await expect(page.getByText('CPA 备份')).toBeVisible()
-	await expect(page.getByRole('img', { name: 'Token 用量趋势' })).toBeVisible()
+test('settings gateways contains target controls while operations is absent', async ({ page }) => {
+  let savedTarget: Record<string, unknown> | null = null
+  await page.route('**/api/**', async (route) => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    if (path.endsWith('/api/health')) return route.fulfill({ json: { status: 'ok', name: 'CPA Orbit' } })
+    if (path.endsWith('/api/cpa/status')) return route.fulfill({ json: { online: true, authFileCount: 2 } })
+    if (path.endsWith('/api/settings')) return route.fulfill({ json: { themeMode: 'light' } })
+    if (path.endsWith('/api/gateways/overview')) return route.fulfill({ json: { targets: [{ target: { id: 1, kind: 'sub2api', name: '主号池', baseUrl: 'http://127.0.0.1:8080', enabled: true, primary: true, allowRemote: false, defaultConcurrency: 2, defaultPriority: 0, rateMultiplier: 1, adminKeyConfigured: true }, health: { status: 'ok', latencyMs: 12 } }], bindings: [], operations: [], snapshots: [], checkedAt: '2026-07-22T08:00:00Z' } })
+    if (path.endsWith('/api/gateways/targets') && request.method() === 'POST') {
+      savedTarget = request.postDataJSON()
+      return route.fulfill({ json: { id: 2, ...savedTarget } })
+    }
+    return route.fulfill({ status: 404, json: { message: `Unhandled test route: ${path}` } })
+  })
+  await page.goto('/settings?section=gateways')
+  await expect(page.getByRole('heading', { name: '网关配置' })).toBeVisible()
+  await expect(page.getByText('主号池', { exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: '号池运维' })).toHaveCount(0)
+  await page.getByRole('button', { name: '添加网关' }).click()
+  await page.getByLabel('显示名称').fill('New gateway')
+  await page.getByLabel('管理密钥').fill('write-only-key')
+  await page.getByRole('button', { name: '保存目标' }).click()
+  await expect.poll(() => savedTarget).toMatchObject({ name: 'New gateway', adminKey: 'write-only-key' })
+  await page.goto('/operations')
+  await expect(page).toHaveURL(/\/$/)
 })
 
+test('toolbox keeps Luban and removes external converter', async ({ page }) => {
+  await mockOrbitApi(page)
+  await page.goto('/toolbox')
+  await expect(page.getByRole('heading', { name: '鲁班接码' })).toBeVisible()
+  await expect(page.getByText('JSON 转换台')).toHaveCount(0)
+  await expect(page.locator('a[href="https://cvt.okcode.cc.cd/"]')).toHaveCount(0)
+})
 test('settings directory opens query-backed independent pages', async ({ page }) => {
   await mockOrbitApi(page)
   await page.goto('/settings')

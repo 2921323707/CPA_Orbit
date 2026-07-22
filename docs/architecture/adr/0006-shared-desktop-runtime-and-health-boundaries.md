@@ -11,8 +11,8 @@ The first desktop host could render the Vue application while relying on a separ
 ## Decision
 
 - The Wails host constructs the same reusable Go application runtime used by the standalone server.
-- Repository builds use the repository root for `data/` and `k12/`; standalone builds use a user configuration directory unless explicitly overridden.
-- The desktop host binds the Monitor API to `127.0.0.1:8080` or validates and reuses an existing CPA Orbit listener.
+- Repository builds use the repository root for `data/` and `subscriptions/`; standalone builds use a user configuration directory unless explicitly overridden.
+- The desktop host binds the Monitor API to `127.0.0.1:8090` or validates and reuses an existing compatible CPA Orbit listener.
 - CLIProxyAPI discovery and startup are companion lifecycle concerns. The application stops only the process it started.
 - Monitor API and CLIProxyAPI health checks use independent requests, timeouts, and UI states.
 - Desktop-only behavior—tray, close-to-tray, startup-at-login, notifications, and taskbar flashing—reads shared settings but remains implemented by the native host.
@@ -28,7 +28,7 @@ The first desktop host could render the Vue application while relying on a separ
 
 ### Negative
 
-- Port 8080 becomes a local singleton and must be validated before reuse.
+- Port 8090 becomes a local singleton and must be version-validated before reuse; Sub2API keeps its standard port 8080.
 - Companion discovery differs between repository and standalone layouts.
 - Native settings updates need a callback so startup and tray behavior can react without restarting.
 

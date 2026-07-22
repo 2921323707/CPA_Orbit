@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"cpa-monitor/server/internal/controlplane"
@@ -98,6 +99,93 @@ func TestDeployDefaultFallsBackToCPA(t *testing.T) {
 	}
 }
 
+func TestDeployDefaultRoutesMarkerlessSub2APIExportAwayFromCPAPrimary(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	cpaTarget, _ := store.UpsertGatewayTarget(ctx, controlplane.GatewayTarget{Kind: "cpa", Name: "legacy", BaseURL: "http://127.0.0.1:8317/v1", Enabled: true, Primary: true})
+	subTarget, _ := store.UpsertGatewayTarget(ctx, controlplane.GatewayTarget{Kind: "sub2api", Name: "pool", BaseURL: "http://127.0.0.1:8080", Enabled: true})
+	cpaAdapter := &fakeAdapter{kind: gateways.KindCPA, deployID: "wrong.json"}
+	subAdapter := &fakeAdapter{kind: gateways.KindSub2API, deployID: "402"}
+	bundle := []byte(`{"exported_at":"2026-07-22T00:00:00Z","proxies":[],"accounts":[{"platform":"openai","type":"oauth","credentials":{"email":"person@example.com","access_token":"token"}}]}`)
+	coordinator := NewCoordinator(store, fakeSource{credential: gateways.Credential{Data: bundle}}, func(target controlplane.GatewayTarget, _ string) (gateways.Adapter, error) {
+		if target.ID == subTarget.ID {
+			return subAdapter, nil
+		}
+		return cpaAdapter, nil
+	})
+	result, err := coordinator.DeployDefault(ctx, "sub-markerless")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TargetID != subTarget.ID || subAdapter.deploys != 1 || cpaAdapter.deploys != 0 || result.TargetID == cpaTarget.ID {
+		t.Fatalf("Sub2API export was routed incorrectly: result=%+v sub=%d cpa=%d", result, subAdapter.deploys, cpaAdapter.deploys)
+	}
+}
+
+func TestDeployDefaultRefusesCPAWhenSub2APIExportHasNoSub2APITarget(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	_, _ = store.UpsertGatewayTarget(ctx, controlplane.GatewayTarget{Kind: "cpa", Name: "legacy", BaseURL: "http://127.0.0.1:8317/v1", Enabled: true, Primary: true})
+	cpaAdapter := &fakeAdapter{kind: gateways.KindCPA, deployID: "wrong.json"}
+	bundle := []byte(`{"exported_at":"2026-07-22T00:00:00Z","proxies":[],"accounts":[{"platform":"openai","type":"oauth","credentials":{"email":"person@example.com","access_token":"token"}}]}`)
+	coordinator := NewCoordinator(store, fakeSource{credential: gateways.Credential{Data: bundle}}, func(controlplane.GatewayTarget, string) (gateways.Adapter, error) { return cpaAdapter, nil })
+	_, err := coordinator.DeployDefault(ctx, "sub-markerless")
+	if err == nil || !strings.Contains(err.Error(), "Sub2API gateway target") {
+		t.Fatalf("expected missing Sub2API target error, got %v", err)
+	}
+	if cpaAdapter.deploys != 0 {
+		t.Fatal("Sub2API-only export reached CPA")
+	}
+}
+
+func TestCredentialCannotDeployToTwoPoolsAcrossSubscriptions(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	first, _ := store.UpsertGatewayTarget(ctx, controlplane.GatewayTarget{Kind: "sub2api", Name: "first", BaseURL: "http://127.0.0.1:8080", Enabled: true, Primary: true})
+	second, _ := store.UpsertGatewayTarget(ctx, controlplane.GatewayTarget{Kind: "cpa", Name: "second", BaseURL: "http://127.0.0.1:8317/v1", Enabled: true})
+	adapters := map[int64]*fakeAdapter{first.ID: {kind: gateways.KindSub2API, deployID: "42"}, second.ID: {kind: gateways.KindCPA, deployID: "owned.json"}}
+	coordinator := NewCoordinator(store, fakeSource{credential: gateways.Credential{LogicalIdentity: "logical-1", Data: []byte(`{"access_token":"token"}`)}}, func(target controlplane.GatewayTarget, _ string) (gateways.Adapter, error) {
+		return adapters[target.ID], nil
+	})
+	if _, err := coordinator.Deploy(ctx, "sub-1", first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := coordinator.Deploy(ctx, "sub-2", second.ID); err == nil || !strings.Contains(err.Error(), "another gateway target") {
+		t.Fatalf("expected cross-pool credential conflict, got %v", err)
+	}
+	if adapters[second.ID].deploys != 0 {
+		t.Fatal("conflicting credential reached the second gateway")
+	}
+}
+
+func TestMigrateReleasesCredentialForDestination(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	first, _ := store.UpsertGatewayTarget(ctx, controlplane.GatewayTarget{Kind: "cpa", Name: "first", BaseURL: "http://127.0.0.1:8317/v1", Enabled: true, Primary: true})
+	second, _ := store.UpsertGatewayTarget(ctx, controlplane.GatewayTarget{Kind: "sub2api", Name: "second", BaseURL: "http://127.0.0.1:8080", Enabled: true})
+	adapters := map[int64]*fakeAdapter{first.ID: {kind: gateways.KindCPA, deployID: "owned.json"}, second.ID: {kind: gateways.KindSub2API, deployID: "42"}}
+	coordinator := NewCoordinator(store, fakeSource{credential: gateways.Credential{LogicalIdentity: "logical-1", Data: []byte(`{"access_token":"token"}`)}}, func(target controlplane.GatewayTarget, _ string) (gateways.Adapter, error) {
+		return adapters[target.ID], nil
+	})
+	if _, err := coordinator.Deploy(ctx, "sub-1", first.ID); err != nil {
+		t.Fatal(err)
+	}
+	binding, err := coordinator.Migrate(ctx, "sub-1", first.ID, second.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binding.TargetID != second.ID || adapters[first.ID].detaches != 1 || adapters[second.ID].deploys != 1 {
+		t.Fatalf("migration did not move the credential: binding=%+v", binding)
+	}
+	assignment, err := store.CredentialAssignment(ctx, "logical-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assignment.TargetID != second.ID || assignment.Status != "active" {
+		t.Fatalf("unexpected migrated assignment: %+v", assignment)
+	}
+}
+
 func TestDeployRequiresMigrationWhenAnotherGatewayIsActive(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
@@ -111,6 +199,22 @@ func TestDeployRequiresMigrationWhenAnotherGatewayIsActive(t *testing.T) {
 	}
 	if adapter.deploys != 0 {
 		t.Fatal("destination was deployed before source detachment")
+	}
+}
+
+func TestInspectReturnsPendingForUndeployedSub2APIExport(t *testing.T) {
+	store := newTestStore(t)
+	bundle := []byte(`{"exported_at":"2026-07-22T00:00:00Z","proxies":[],"accounts":[{"platform":"openai","type":"oauth","credentials":{"email":"person@example.com","access_token":"token"}}]}`)
+	coordinator := NewCoordinator(store, fakeSource{credential: gateways.Credential{Data: bundle}}, func(controlplane.GatewayTarget, string) (gateways.Adapter, error) {
+		t.Fatal("adapter must not be created without a binding")
+		return nil, nil
+	})
+	result, err := coordinator.Inspect(context.Background(), "sub-pending")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "pending" || result.ReasonCode != "sub2api_not_deployed" {
+		t.Fatalf("unexpected pending result: %+v", result)
 	}
 }
 

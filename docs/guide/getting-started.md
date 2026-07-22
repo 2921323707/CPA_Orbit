@@ -18,8 +18,8 @@ All services bind to `127.0.0.1` by default. Do not expose them directly to an u
 | Go | 1.25 | Monitor API and desktop host |
 | Node.js | 20 | Vue console build |
 | WebView2 | Windows 10/11 | Desktop rendering |
-| Sub2API | Recommended | Primary subscription pool, scheduling, and usage records |
-| CLIProxyAPI | Optional | Lightweight CPA fallback |
+| Sub2API | Optional | Configurable local companion for compatible Auth JSON |
+| CLIProxyAPI | Optional | Configurable local CPA companion |
 
 ## Start the workspace
 
@@ -32,7 +32,7 @@ cd CPA_Orbit
 | Service | Local address |
 |---|---|
 | Web console | `http://127.0.0.1:5173/` |
-| Monitor API | `http://127.0.0.1:8080/api` |
+| Monitor API | `http://127.0.0.1:8090/api` |
 | CLIProxyAPI | `http://127.0.0.1:8317/v1` |
 
 ## Confirm health
@@ -40,24 +40,24 @@ cd CPA_Orbit
 The header reports Monitor and CPA health independently. CPA downtime does not mark the embedded Monitor API offline. You can also open:
 
 ```text
-http://127.0.0.1:8080/api/health
+http://127.0.0.1:8090/api/health
 ```
 
 ## Configure CPA
 
 Open **Settings** and confirm the local base URL, the `cpa/auths` directory, and the CLIProxyAPI client key. Saved keys remain backend-only; the browser receives only a configured flag.
 
-## Configure the primary pool
+## Configure a gateway companion
 
-Open **Pool operations**, add a Sub2API target, save its write-only administrator key, and mark it primary. A local target is recommended; remote targets require explicit approval and HTTPS. See [Sub2API subscription pools](/guide/sub2api-pool) for ownership, fallback, migration, and Token retention rules.
+Open **Settings → Gateways** (`/settings?section=gateways`) and configure a local CPA or generic local Sub2API companion. Keys are write-only. Remote endpoints require explicit approval and HTTPS; loopback is preferred. See [gateway and subscription guidance](/guide/sub2api-pool) for assignment and reconciliation rules.
 
 ## Import a subscription
 
 ```text
-Select JSON → archive under k12/MMDD → deploy to Sub2API → CPA fallback when primary import fails
+Safe local preflight → provider/date archive → explicitly choose exactly one compatible CPA or Sub2API target
 ```
 
-Single-file imports may record an acquisition price. Identity is based on normalized full JSON content rather than a filename or email address.
+A pending or uncertain deployment remains visible for reconciliation; Orbit does not automatically fall back to another target. Single-file imports may record an acquisition price. Identity is based on normalized full JSON content rather than a filename or email address.
 
 ::: warning Sensitive material
 CPA JSON contains bearer tokens. Never attach it to an issue, chat, log, screenshot, or public repository.

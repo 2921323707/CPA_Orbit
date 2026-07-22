@@ -87,6 +87,38 @@ func TestGatewayTargetAPIStoresSecretWriteOnlyAndTestsSub2API(t *testing.T) {
 	}
 }
 
+func TestAccountPollSettingsAndEndpoints(t *testing.T) {
+	runtime, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = runtime.Close() })
+
+	request := httptest.NewRequest(http.MethodPut, "/api/settings", bytes.NewBufferString(`{"accountPollMinutes":0}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	runtime.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"accountPollMinutes":0`) {
+		t.Fatalf("settings update status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runtime.Start(ctx)
+	request = httptest.NewRequest(http.MethodGet, "/api/subscriptions/poll-status", nil)
+	response = httptest.NewRecorder()
+	runtime.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"enabled":false`) {
+		t.Fatalf("poll status=%d body=%s", response.Code, response.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodPost, "/api/subscriptions/poll-now", nil)
+	response = httptest.NewRecorder()
+	runtime.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("poll now=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestDesktopHandlerTrustsOnlyInProcessAPIRoutes(t *testing.T) {
 	runtime, err := New(t.TempDir())
 	if err != nil {

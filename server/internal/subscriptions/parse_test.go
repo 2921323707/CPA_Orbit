@@ -36,6 +36,57 @@ func TestParseJSONCompatibilityAndNoTokenSerialization(t *testing.T) {
 	}
 }
 
+func TestParseJSONRecognizesSingleAccountSub2APIData(t *testing.T) {
+	data := []byte(`{
+		"type":"sub2api-data","version":1,"proxies":[],
+		"accounts":[{
+			"name":"agent@example.com","platform":"openai","type":"oauth",
+			"credentials":{"auth_mode":"agent_identity","email":"agent@example.com","account_id":"acct-1","chatgpt_account_id":"chatgpt-1","plan_type":"plus","agent_private_key":"secret"},
+			"extra":{"last_refresh":"2026-07-22T01:02:03Z"}
+		}]
+	}`)
+	s, err := ParseJSON(data, "sub2api/0722/agent.json", time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Email != "agent@example.com" || s.Name != "agent@example.com" || s.Provider != "openai" || s.Type != "oauth" {
+		t.Fatalf("Sub2API identity was not recognized: %+v", s)
+	}
+	if s.AccountID != "acct-1" || s.ChatGPTAccountID != "chatgpt-1" || s.PlanType != "plus" || s.LastRefresh != "2026-07-22T01:02:03Z" {
+		t.Fatalf("Sub2API metadata was not projected: %+v", s)
+	}
+	encoded, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contains(string(encoded), "agent_private_key") || contains(string(encoded), "secret") {
+		t.Fatalf("agent identity secret leaked in API model: %s", encoded)
+	}
+}
+
+func TestParseJSONRejectsMultiAccountSub2APIData(t *testing.T) {
+	data := []byte(`{"type":"sub2api-data","version":1,"accounts":[{"name":"one"},{"name":"two"}]}`)
+	if _, err := ParseJSON(data, "sub2api/0722/bundle.json", time.Now()); err == nil {
+		t.Fatal("expected multi-account bundle rejection")
+	}
+}
+
+func TestParseJSONRecognizesMarkerlessSub2APIExport(t *testing.T) {
+	data := []byte(`{
+		"exported_at":"2026-07-22T00:00:00Z","proxies":[],
+		"accounts":[{"name":"markerless@example.com","platform":"openai","type":"oauth",
+		"credentials":{"email":"markerless@example.com","account_id":"acct-2","plan_type":"team"},
+		"extra":{"last_refresh":"2026-07-22T02:03:04Z"}}]
+	}`)
+	s, err := ParseJSON(data, "sub2api/0722/markerless.json", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Email != "markerless@example.com" || s.AccountID != "acct-2" || s.PlanType != "team" || s.Provider != "openai" {
+		t.Fatalf("markerless export metadata was not projected: %+v", s)
+	}
+}
+
 func contains(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {

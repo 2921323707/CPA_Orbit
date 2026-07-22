@@ -42,7 +42,7 @@ func TestPrepareAPIReusesExistingMonitorBackend(t *testing.T) {
 			t.Errorf("proxied origin = %q, want empty", request.Header.Get("Origin"))
 		}
 		response.Header().Set("Content-Type", "application/json")
-		_, _ = response.Write([]byte(`{"status":"ok","name":"CPA Orbit"}`))
+		_, _ = response.Write([]byte(`{"status":"ok","name":"CPA Orbit","version":"1.3.0"}`))
 	}))
 	defer external.Close()
 
@@ -65,5 +65,17 @@ func TestPrepareAPIReusesExistingMonitorBackend(t *testing.T) {
 	app.handler().ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("proxied health status = %d", recorder.Code)
+	}
+}
+
+func TestMonitorAPIHealthyRejectsOutdatedBackend(t *testing.T) {
+	external := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{"status":"ok","name":"CPA Orbit","version":"1.2.0"}`))
+	}))
+	defer external.Close()
+
+	if monitorAPIHealthy(external.URL) {
+		t.Fatal("outdated Monitor API must not be reused by the desktop host")
 	}
 }

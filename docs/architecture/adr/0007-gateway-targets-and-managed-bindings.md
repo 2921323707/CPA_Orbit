@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted; target assignment and fallback behavior amended by [ADR 0009](0009-safe-auth-preflight-and-explicit-gateway-assignment.md)
 
 ## Context
 
@@ -17,7 +17,7 @@ The same OAuth refresh credential must also not be active in CPA and Sub2API by 
 - A gateway target owns its runtime scheduling and refreshed credential state.
 - A deployment binding records the desired and observed relationship between one subscription and one gateway target.
 - Only objects explicitly marked `managed` may be changed or deleted automatically by CPA Orbit. Adopted or external objects are observed without destructive reconciliation.
-- Refreshable OAuth credentials have at most one active runtime binding by default. Its role is `primary` or `fallback`; CPA is the lightweight fallback and Sub2API is the default primary target for new compatible imports. Switching targets uses migration rather than active-active copying.
+- Refreshable OAuth credentials have at most one active runtime binding. Roles may remain in persisted compatibility data, but current imports explicitly select exactly one compatible CPA or Sub2API target and never fall back automatically. Switching targets uses migration rather than active-active copying.
 - CPA and Sub2API are integrated through adapters. Neither management protocol is made to impersonate the other.
 - Relational control-plane state and bounded aggregate usage snapshots are stored in local SQLite. Raw credential JSON remains in the protected archive and is never copied into public API responses or usage tables.
 
@@ -44,7 +44,7 @@ The same OAuth refresh credential must also not be active in CPA and Sub2API by 
 
 - **Make the subscription archive authoritative for every runtime field.** Rejected because refreshed credentials and Sub2API scheduling/billing state cannot be safely reconstructed from the original file.
 - **Keep independent CPA and Sub2API pools.** Rejected because asset cost, expiry, health, and deletion would drift across tools.
-- **Replace CPA entirely.** Rejected because CPA remains useful as a lightweight local fallback and migration source.
+- **Replace CPA entirely.** Rejected because CPA remains useful as a lightweight local companion and explicit migration source.
 
 ## References
 

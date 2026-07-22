@@ -48,10 +48,10 @@ flowchart TB
     direction LR
     AUTH[("CPA Auth Pool")]
     CLI["CLIProxyAPI"]
-		SUB2API["Sub2API<br/><small>primary pool · raw usage</small>"]
+		SUB2API["Sub2API<br/><small>configured companion · raw usage</small>"]
   end
 
-  BROWSER -->|"127.0.0.1:8080/api"| EDGE
+  BROWSER -->|"127.0.0.1:8090/api"| EDGE
   DESKTOP -->|"embedded /api"| EDGE
 	EDGE --> MONITOR & SUBS & ROUTER & LUBAN
   MONITOR <--> HISTORY
@@ -85,10 +85,9 @@ sequenceDiagram
   participant UI as Vue Workspace
   participant API as Monitor API
   participant Guard as Import Guard
-  participant Archive as k12 Archive
+  participant Archive as Provider/Date Archive
 	participant Coordinator as Gateway Coordinator
-	participant Primary as Sub2API Primary
-	participant Fallback as CPA Fallback
+	participant Target as Explicit CPA/Sub2API Target
 
   Operator->>UI: Select one or more JSON files
   UI->>UI: Validate extension and show queue
@@ -98,12 +97,13 @@ sequenceDiagram
   alt New subscription
     Archive-->>Guard: No canonical match
     Guard->>Archive: Atomic dated archive write
-		Guard->>Coordinator: Deploy archived credential
-		Coordinator->>Primary: Import Codex session
-		alt Primary import succeeds
-			Primary-->>Coordinator: Managed account ID
-		else Primary import fails
-			Coordinator->>Fallback: Create managed CPA projection
+		Guard-->>UI: Safe preflight + compatible targets
+		UI->>Coordinator: Confirm exactly one target
+		Coordinator->>Target: Deploy credential
+		alt Target confirms success
+			Target-->>Coordinator: Managed account ID
+		else Target is pending, uncertain, or failed
+			Coordinator-->>API: Preserve reconcilable state; no fallback
 		end
     API-->>UI: 200 + import result
     UI-->>Operator: Success toast and refreshed list
@@ -114,7 +114,7 @@ sequenceDiagram
   end
 ```
 
-The optional acquisition price never gates the import. It is metadata, not a confirmation boundary; an empty value proceeds immediately and the UI reports progress in-page.
+The optional acquisition price never gates the import. It is metadata, not a confirmation boundary. The confirmation boundary is the second-stage explicit selection of exactly one compatible target after safe local Auth JSON preflight.
 
 ## 4. Trust boundaries and secret flow
 
@@ -141,13 +141,13 @@ flowchart LR
 
 | Failure | User-visible behavior | Recovery |
 |---|---|---|
-| Monitor API cannot bind port 8080 | Startup validates the existing listener; a non-CPA service is rejected | Free the port or start the configured CPA Orbit backend |
-| Sub2API primary is unavailable during import | Archive remains safe; CPA is attempted as a deployment fallback | Restore Sub2API, then migrate the fallback binding back to primary |
+| Monitor API cannot bind port 8090 | Startup validates the existing listener; a non-CPA service is rejected | Free the port or start the configured CPA Orbit backend |
+| Selected CPA/Sub2API target is unavailable during import | Archive remains safe; deployment is failed, pending, or uncertain without automatic fallback | Reconcile the selected target, then retry or explicitly choose another compatible target |
 | CLIProxyAPI is unavailable | Embedded backend remains online; CPA status is shown independently as offline | Start the companion runtime or correct its configured path |
 | Upstream price/SMS service fails | Last valid snapshot remains available with a sanitized error state | Retry without inventing price or verification data |
 | Import is invalid or duplicated | No archive overwrite; typed error appears in the UI | Correct the document or select a distinct credential file |
 | CPA projection is removed | Subscription archive remains authoritative | Reconcile the projection from archived subscriptions |
-| Telemetry collection fails | Last valid snapshot remains visible and is marked stale | Retry manually or wait for the five-minute collector |
+| Account status/quota polling fails | Last valid status remains visible and is marked stale or uncertain | Retry manually or wait for the independent five-minute poller; interval `0` disables it |
 
 ## 6. Decisions and evolution
 

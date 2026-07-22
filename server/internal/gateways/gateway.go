@@ -2,10 +2,61 @@ package gateways
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"time"
 
 	"cpa-monitor/server/internal/model"
 )
+
+// IsSub2APIDataPackage recognizes both current typed exports and older
+// markerless exports. The markerless form is intentionally identified by its
+// complete envelope shape so an ordinary credential containing an accounts
+// property cannot be routed to the wrong gateway.
+func IsSub2APIDataPackage(data []byte) bool {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(data, &root); err != nil || root == nil {
+		return false
+	}
+	var kind string
+	if rawType, ok := root["type"]; ok {
+		_ = json.Unmarshal(rawType, &kind)
+	}
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	if kind == "sub2api-data" || kind == "sub2api-bundle" {
+		return true
+	}
+	if kind != "" {
+		return false
+	}
+	if _, ok := root["exported_at"]; !ok {
+		return false
+	}
+	rawAccounts, hasAccounts := root["accounts"]
+	rawProxies, hasProxies := root["proxies"]
+	if !hasAccounts || !hasProxies {
+		return false
+	}
+	var proxies []json.RawMessage
+	if err := json.Unmarshal(rawProxies, &proxies); err != nil {
+		return false
+	}
+	var accounts []struct {
+		Platform    string          `json:"platform"`
+		Type        string          `json:"type"`
+		Credentials json.RawMessage `json:"credentials"`
+	}
+	if err := json.Unmarshal(rawAccounts, &accounts); err != nil {
+		return false
+	}
+	for _, account := range accounts {
+		var credentials map[string]any
+		if strings.TrimSpace(account.Platform) == "" || strings.TrimSpace(account.Type) == "" || json.Unmarshal(account.Credentials, &credentials) != nil || len(credentials) == 0 {
+			return false
+		}
+	}
+	return true
+}
 
 // Kind identifies a supported runtime gateway implementation.
 type Kind string
@@ -24,6 +75,7 @@ type Credential struct {
 	AccountID        string
 	ChatGPTAccountID string
 	Provider         string
+	LogicalIdentity  string
 }
 
 // BindingRef points at the runtime resource created for one subscription.

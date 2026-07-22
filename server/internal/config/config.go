@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -14,31 +15,34 @@ import (
 )
 
 const (
-	DefaultListenAddr = "127.0.0.1:8080"
+	DefaultListenAddr = "127.0.0.1:8090"
 	DefaultBaseURL    = "http://127.0.0.1:8317/v1"
 )
 
 type Settings struct {
 	Threshold            float64 `json:"threshold"`
 	RefreshMinutes       int     `json:"refreshMinutes"`
-	WebhookURL           string  `json:"webhookUrl"`
-	BaseURL              string  `json:"baseUrl"`
-	APIKey               string  `json:"apiKey"`
-	CPAManagementKey     string  `json:"cpaManagementKey"`
-	LubanAPIKey          string  `json:"lubanApiKey"`
-	AllowRemoteBaseURL   bool    `json:"allowRemoteBaseUrl"`
-	CPAAuthDir           string  `json:"cpaAuthDir"`
-	SyncToCPAAuthDir     bool    `json:"syncToCpaAuthDir"`
-	ThemeMode            string  `json:"themeMode"`
-	StartOnLogin         bool    `json:"startOnLogin"`
-	CloseToTray          bool    `json:"closeToTray"`
-	DesktopNotifications bool    `json:"desktopNotifications"`
-	FlashOnAlert         bool    `json:"flashOnAlert"`
+	AccountPollMinutes   int     `json:"accountPollMinutes"`
+	accountPollPresent   bool
+	WebhookURL           string `json:"webhookUrl"`
+	BaseURL              string `json:"baseUrl"`
+	APIKey               string `json:"apiKey"`
+	CPAManagementKey     string `json:"cpaManagementKey"`
+	LubanAPIKey          string `json:"lubanApiKey"`
+	AllowRemoteBaseURL   bool   `json:"allowRemoteBaseUrl"`
+	CPAAuthDir           string `json:"cpaAuthDir"`
+	SyncToCPAAuthDir     bool   `json:"syncToCpaAuthDir"`
+	ThemeMode            string `json:"themeMode"`
+	StartOnLogin         bool   `json:"startOnLogin"`
+	CloseToTray          bool   `json:"closeToTray"`
+	DesktopNotifications bool   `json:"desktopNotifications"`
+	FlashOnAlert         bool   `json:"flashOnAlert"`
 }
 
 type PublicSettings struct {
 	Threshold                  float64 `json:"threshold"`
 	RefreshMinutes             int     `json:"refreshMinutes"`
+	AccountPollMinutes         int     `json:"accountPollMinutes"`
 	WebhookURL                 string  `json:"webhookUrl"`
 	BaseURL                    string  `json:"baseUrl"`
 	APIKeyConfigured           bool    `json:"apiKeyConfigured"`
@@ -61,13 +65,13 @@ type Store struct {
 }
 
 func Defaults() Settings {
-	return Settings{Threshold: 1, RefreshMinutes: 5, BaseURL: DefaultBaseURL, ThemeMode: "auto", CloseToTray: true, DesktopNotifications: true, FlashOnAlert: true}
+	return Settings{Threshold: 1, RefreshMinutes: 5, AccountPollMinutes: 5, BaseURL: DefaultBaseURL, ThemeMode: "auto", CloseToTray: true, DesktopNotifications: true, FlashOnAlert: true}
 }
 
 func NewStore(path string) (*Store, error) {
 	s := &Store{path: path}
-	var loaded Settings
-	if err := storage.LoadJSON(path, &loaded); err != nil {
+	loaded, err := loadPersistedSettings(path)
+	if err != nil {
 		return nil, fmt.Errorf("load settings: %w", err)
 	}
 	data, err := settingsFromLoaded(loaded)
@@ -79,8 +83,8 @@ func NewStore(path string) (*Store, error) {
 }
 
 func (s *Store) Reload() error {
-	var loaded Settings
-	if err := storage.LoadJSON(s.path, &loaded); err != nil {
+	loaded, err := loadPersistedSettings(s.path)
+	if err != nil {
 		return fmt.Errorf("load settings: %w", err)
 	}
 	data, err := settingsFromLoaded(loaded)
@@ -93,6 +97,25 @@ func (s *Store) Reload() error {
 	return nil
 }
 
+func loadPersistedSettings(path string) (Settings, error) {
+	var loaded Settings
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) || len(data) == 0 {
+		return loaded, nil
+	}
+	if err != nil {
+		return loaded, err
+	}
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		return loaded, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err == nil {
+		_, loaded.accountPollPresent = fields["accountPollMinutes"]
+	}
+	return loaded, nil
+}
+
 func settingsFromLoaded(loaded Settings) (Settings, error) {
 	s := Defaults()
 	if loaded.Threshold > 0 {
@@ -100,6 +123,9 @@ func settingsFromLoaded(loaded Settings) (Settings, error) {
 	}
 	if loaded.RefreshMinutes > 0 {
 		s.RefreshMinutes = loaded.RefreshMinutes
+	}
+	if loaded.accountPollPresent {
+		s.AccountPollMinutes = loaded.AccountPollMinutes
 	}
 	if strings.TrimSpace(loaded.BaseURL) != "" {
 		s.BaseURL = strings.TrimSpace(loaded.BaseURL)
@@ -133,7 +159,7 @@ func (s *Store) Get() Settings {
 func (s *Store) Public() PublicSettings {
 	v := s.Get()
 	return PublicSettings{
-		Threshold: v.Threshold, RefreshMinutes: v.RefreshMinutes,
+		Threshold: v.Threshold, RefreshMinutes: v.RefreshMinutes, AccountPollMinutes: v.AccountPollMinutes,
 		WebhookURL: v.WebhookURL, BaseURL: v.BaseURL,
 		APIKeyConfigured: v.APIKey != "", CPAManagementKeyConfigured: v.CPAManagementKey != "",
 		LubanAPIKeyConfigured: v.LubanAPIKey != "",
@@ -168,6 +194,9 @@ func ValidateSettings(v Settings) error {
 	}
 	if v.RefreshMinutes < 1 || v.RefreshMinutes > 1440 {
 		return errors.New("refreshMinutes must be between 1 and 1440")
+	}
+	if v.AccountPollMinutes != 0 && (v.AccountPollMinutes < 5 || v.AccountPollMinutes > 1440) {
+		return errors.New("accountPollMinutes must be 0 or between 5 and 1440")
 	}
 	if v.ThemeMode != "light" && v.ThemeMode != "dark" && v.ThemeMode != "auto" {
 		return errors.New("themeMode must be light, dark, or auto")

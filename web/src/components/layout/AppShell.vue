@@ -7,7 +7,6 @@ import {
   Languages,
   Menu,
   MonitorCog,
-  Network,
   Moon,
   Server as ServerIcon,
   Settings,
@@ -50,7 +49,7 @@ function endpointHost(raw: string, fallback: string) {
   }
 }
 
-const monitorEndpoint = endpointHost(API_BASE, '127.0.0.1:8080')
+const monitorEndpoint = endpointHost(API_BASE, '127.0.0.1:8090')
 
 function applyTheme(value: 'light' | 'dark') {
   document.documentElement.dataset.theme = value
@@ -81,7 +80,6 @@ const navigation = computed(() => [
   { to: '/', label: t('nav.dashboard'), icon: Gauge },
   { to: '/offers', label: t('nav.offers'), icon: ShoppingCart },
   { to: '/subscriptions', label: t('nav.subscriptions'), icon: FileJson2 },
-  { to: '/operations', label: t('nav.operations'), icon: Network },
   { to: '/toolbox', label: t('nav.toolbox'), icon: Wrench },
   { to: '/settings', label: t('nav.settings'), icon: Settings },
   { to: '/docs', label: t('nav.docs'), icon: BookOpenText },

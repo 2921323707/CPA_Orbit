@@ -7,6 +7,42 @@ import (
 	"time"
 )
 
+func TestCredentialAssignmentReservesOneTargetAndReleasesForMigration(t *testing.T) {
+	store, err := NewStore(filepath.Join(t.TempDir(), "control-plane.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	ctx := context.Background()
+	first, err := store.UpsertGatewayTarget(ctx, GatewayTarget{Kind: "sub2api", Name: "first", BaseURL: "http://127.0.0.1:8080", Enabled: true, Primary: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.UpsertGatewayTarget(ctx, GatewayTarget{Kind: "cpa", Name: "second", BaseURL: "http://127.0.0.1:8317/v1", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReserveCredentialAssignment(ctx, "logical-1", "subscription-1", first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReserveCredentialAssignment(ctx, "logical-1", "subscription-2", second.ID); err == nil {
+		t.Fatal("expected assignment conflict for another target")
+	}
+	if err := store.CompleteCredentialAssignment(ctx, "logical-1", "released", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReserveCredentialAssignment(ctx, "logical-1", "subscription-2", second.ID); err != nil {
+		t.Fatal(err)
+	}
+	assignment, err := store.CredentialAssignment(ctx, "logical-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assignment.TargetID != second.ID || assignment.SubscriptionID != "subscription-2" || assignment.Status != "reserved" {
+		t.Fatalf("unexpected assignment: %+v", assignment)
+	}
+}
+
 func TestStorePersistsTargetsBindingsOperationsAndUsage(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

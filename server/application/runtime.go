@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"cpa-monitor/server/internal/accounthealth"
 	"cpa-monitor/server/internal/config"
 	"cpa-monitor/server/internal/controlplane"
 	"cpa-monitor/server/internal/deployments"
@@ -33,6 +34,7 @@ type Runtime struct {
 	control     *controlplane.Store
 	deployments *deployments.Coordinator
 	collector   *observability.Collector
+	accountPoll *accounthealth.Scheduler
 	startOnce   sync.Once
 	closeOnce   sync.Once
 	closeErr    error
@@ -44,7 +46,7 @@ type Settings = config.Settings
 type Alert = model.Alert
 
 // New creates a backend rooted at root. Mutable data is stored below root/data
-// and subscription archives below root/k12.
+// and subscription archives below root/subscriptions/{sub2api,cpa}/MMDD.
 func New(root string) (*Runtime, error) {
 	if strings.TrimSpace(root) == "" {
 		return nil, errors.New("application root is required")
@@ -60,6 +62,9 @@ func New(root string) (*Runtime, error) {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create data directory: %w", err)
 	}
+	if err := migrateLegacySubscriptionRoot(absoluteRoot); err != nil {
+		return nil, err
+	}
 
 	settings, err := config.NewStore(filepath.Join(dataDir, "settings.json"))
 	if err != nil {
@@ -70,7 +75,7 @@ func New(root string) (*Runtime, error) {
 		return nil, err
 	}
 	subs, err := subscriptions.NewManager(
-		filepath.Join(absoluteRoot, "k12"),
+		filepath.Join(absoluteRoot, "subscriptions"),
 		filepath.Join(dataDir, "subscription_checks.json"),
 		settings,
 	)
@@ -118,10 +123,12 @@ func New(root string) (*Runtime, error) {
 		return nil, err
 	}
 
+	accountPoll := accounthealth.NewScheduler(settings, coordinator, subs)
 	server := httpapi.NewServer(settings, monitor, subs, control, coordinator, collector)
+	server.SetAccountPoller(accountPoll)
 	return &Runtime{
 		root: absoluteRoot, handler: server.Handler(), server: server,
-		monitor: monitor, settings: settings, control: control, deployments: coordinator, collector: collector,
+		monitor: monitor, settings: settings, control: control, deployments: coordinator, collector: collector, accountPoll: accountPoll,
 	}, nil
 }
 
@@ -174,6 +181,7 @@ func (r *Runtime) Start(ctx context.Context) {
 	r.startOnce.Do(func() {
 		r.monitor.Start(ctx)
 		r.collector.Start(ctx)
+		r.accountPoll.Start(ctx)
 	})
 }
 

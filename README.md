@@ -1,7 +1,7 @@
 <div align="center">
   <img src="app/build/appicon.png" width="112" alt="CPA Orbit logo" />
   <h1>CPA Orbit</h1>
-  <p><strong>A local-first control plane for AI subscriptions, Sub2API pools, Token telemetry, price intelligence, and CPA fallback.</strong></p>
+  <p><strong>A local-first control plane for AI subscriptions, provider/date archives, account health, price intelligence, and configurable CPA or Sub2API companions.</strong></p>
 
   <p>
     <a href="http://165.154.205.54/cpa_orbit/">
@@ -35,8 +35,8 @@
 
 CPA Orbit brings the operational paths that normally live across scripts, browser tabs, and local folders into one coherent workspace. The desktop application and browser console share the same Go runtime, settings, credentials, subscription archive, alerts, and price history. Everything stays local by default and the network services bind to loopback interfaces.
 
-- **Subscription operations** — single or batch JSON import, canonical-content deduplication, archive management, CPA synchronization, quota checks, and connectivity diagnostics.
-- **Sub2API pools** — GPT Plus/Codex session deployment, one-primary ownership, CPA fallback, resumable migration, write-only admin keys, and safe managed deletion.
+- **Subscription assets** — two-stage safe Auth JSON preflight, canonical-content deduplication, provider/date archive management, explicit one-target assignment, and account status/quota checks.
+- **Gateway companions** — Explicitly assign each compatible Auth JSON to exactly one configured local CPA or Sub2API companion; write-only admin keys and safe managed deletion preserve ownership.
 - **Token telemetry** — Sub2API snapshots plus normalized 15-minute request, Token, latency, and cost aggregates retained locally for up to 90 days.
 - **Price intelligence** — K12 and GPT Plus offer collection, current inventory, threshold alerts, and truthful 14-day average-price history.
 - **CPA runtime control** — automatic CLIProxyAPI discovery and startup, live health state, auth-pool projection, and shared endpoint visibility.
@@ -63,7 +63,7 @@ flowchart LR
     APP["Desktop Console<br/>Wails + WebView2"]
   end
 
-  subgraph CORE["Local Control Plane · 127.0.0.1:8080"]
+  subgraph CORE["Local Control Plane · 127.0.0.1:8090"]
     API["Monitor API<br/>Go · net/http"]
     MON["Price & Alert Monitor"]
 		SUB["Subscription Assets"]
@@ -74,12 +74,12 @@ flowchart LR
 
   subgraph STATE["Local Source of Truth"]
     DATA[("data/<br/>settings · history · alerts")]
-		ARCH[("k12/<br/>subscription archive")]
+		ARCH[("subscriptions/<br/>sub2api|cpa / MMDD")]
 		DB[("control-plane.db<br/>targets · bindings · usage")]
   end
 
 	 subgraph RUNTIME["Runtime Gateways"]
-    SUB2["Sub2API<br/>primary pool"]
+    SUB2["Sub2API<br/>configured companion"]
     CPA["CLIProxyAPI<br/>127.0.0.1:8317"]
     AUTH[("cpa/auths/")]
   end
@@ -106,16 +106,16 @@ flowchart LR
 	class SUB2,CPA,AUTH runtime;
 ```
 
-The archive under `k12/` is the durable subscription asset source. Sub2API remains authoritative for refreshed runtime credentials and raw request logs; CPA is a lightweight managed fallback projection. SQLite records ownership and desired/observed bindings without becoming another credential store. See the [architecture dossier](docs/architecture/README.md) and [Sub2API pool guide](docs/guide/sub2api-pool.md).
+The provider/date archive under `subscriptions/{sub2api,cpa}/MMDD/` is the durable subscription asset source. A safe local Auth JSON preflight precedes an explicit assignment to exactly one compatible configured CPA or Sub2API companion; no automatic fallback occurs. SQLite records ownership and desired/observed bindings without becoming another credential store. See the [architecture dossier](docs/architecture/README.md), [gateway guide](docs/guide/sub2api-pool.md), and [ADR 0009](docs/architecture/adr/0009-safe-auth-preflight-and-explicit-gateway-assignment.md).
 
 ## Recent updates
 
-- Added Sub2API as the preferred primary pool, with official Codex-session import, CPA deployment fallback, managed/adopted ownership, migration rollback, and one-active-primary protection.
-- Added a pool operations console with gateway health, recent deployment operations, Sub2API snapshots, seven-day Token charts, manual refresh, and 90-day local aggregates.
-- Import can now archive and deploy GPT Plus/Codex JSON in one action; runtime failure never discards the local archive.
+- Moved CPA/Sub2API gateway configuration into **Settings → Gateways** (`?section=gateways`) and removed the dedicated operations route.
+- Added two-stage safe Auth JSON preflight and explicit exactly-one compatible-target assignment; there is no automatic CPA/Sub2API fallback, and pending/uncertain results remain visible for reconciliation.
+- Retained provider/date archives and one logical credential assignment per active pool, with account status/quota polling independent from offer monitoring (five minutes by default; `0` disables it).
 - Unified K12 and unverified GPT Plus offers in a compact Price workspace with five-row pagination and direct checkout links.
 - Added deletable price-history samples with immediate chart re-rendering, single-source trend views, and corrected K12 collection filters.
-- Replaced the legacy GPT Plus screen with a Toolbox for subscription JSON conversion and Luban SMS operations.
+- Kept the Toolbox focused on Luban SMS operations; the external subscription JSON converter has been removed.
 - Integrated Alerts into independent Settings subpages and capped history at ten records with five-row pagination.
 - Unified desktop and browser data, settings, secrets, subscription state, and backend health reporting.
 - Added one-click desktop startup for the Monitor API and CLIProxyAPI, plus tray, notifications, taskbar flashing, and startup-at-login controls.
@@ -137,7 +137,7 @@ See the complete [changelog](docs/releases/CHANGELOG.md).
 - Node.js 20 or newer with npm
 - Windows 10/11 with WebView2 for the desktop executable
 - A local CLIProxyAPI runtime only when CPA proxy features are required
-- A Sub2API deployment and administrator API key when primary-pool features are required
+- A local Sub2API deployment and administrator API key when that companion is configured
 
 ### Development workspace
 
@@ -150,7 +150,7 @@ cd CPA_Orbit
 | Service | Local endpoint |
 |---|---|
 | Web console | `http://127.0.0.1:5173/` |
-| Monitor API | `http://127.0.0.1:8080/api` |
+| Monitor API | `http://127.0.0.1:8090/api` |
 | CLIProxyAPI | `http://127.0.0.1:8317/v1` |
 | Sub2API | User configured; a loopback deployment is recommended |
 | In-app guide | `http://127.0.0.1:5173/docs` |
@@ -161,7 +161,7 @@ cd CPA_Orbit
 .\app\build-windows.ps1
 ```
 
-The portable executable is written to `app/build/bin/CPAOrbit.exe`. A repository build automatically shares the root `data/` and `k12/` directories with the browser console and starts or reuses all required local services.
+The portable executable is written to `app/build/bin/CPAOrbit.exe`. A repository build automatically shares the root `data/` and `subscriptions/` directories with the browser console and starts or reuses all required local services.
 
 ### macOS Apple Silicon build
 
@@ -201,7 +201,7 @@ Browse the complete, searchable documentation at **[165.154.205.54/cpa_orbit](ht
 
 ## Security
 
-CPA Orbit is local-first, not credential-free. Never commit or share CPA/Sub2API JSON, OAuth tokens, administrator keys, `data/`, `k12/`, `cpa/auths/`, logs, or screenshots containing account information. Remote gateway targets require HTTPS, but loopback deployment is still preferred. Review the [security policy](docs/SECURITY.md) before exposing an endpoint or redistributing a build.
+CPA Orbit is local-first, not credential-free. Never commit or share CPA/Sub2API JSON, OAuth tokens, administrator keys, `data/`, provider/date `subscriptions/`, `cpa/auths/`, logs, or screenshots containing account information. Keys are write-only; remote targets require explicit approval and HTTPS, while loopback is preferred. Back up both `data/` and `subscriptions/` using encryption and access controls. Local credentials may otherwise remain plaintext on disk unless the host filesystem encrypts them. Review the [security policy](docs/SECURITY.md) before exposing an endpoint or redistributing a build.
 
 ## Data sources and acknowledgements
 

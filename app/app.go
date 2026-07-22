@@ -18,12 +18,15 @@ import (
 	"cpa-monitor/server/application"
 )
 
-const defaultMonitorAddress = "127.0.0.1:8080"
+const (
+	defaultMonitorAddress       = "127.0.0.1:8090"
+	compatibleMonitorAPIVersion = "1.3.0"
+)
 
 // App hosts the reusable backend inside the native desktop lifecycle.
 type App struct {
 	runtime        *application.Runtime
-	companion      *companionService
+	companions     *companionManager
 	assetHandler   http.Handler
 	apiServer      *http.Server
 	apiAddress     string
@@ -37,12 +40,22 @@ type App struct {
 	settingsReady  bool
 }
 
-func newApp(dataDir string, companion *companionService) (*App, error) {
+func newApp(dataDir string, companions any) (*App, error) {
 	appRuntime, err := application.New(dataDir)
 	if err != nil {
 		return nil, err
 	}
-	app := &App{runtime: appRuntime, companion: companion}
+	var manager *companionManager
+	switch value := companions.(type) {
+	case *companionManager:
+		manager = value
+	case *companionService:
+		manager = newCompanionManager(value)
+	case nil:
+	default:
+		return nil, fmt.Errorf("unsupported companion manager type %T", companions)
+	}
+	app := &App{runtime: appRuntime, companions: manager}
 	appRuntime.SetSettingsUpdateHandler(app.settingsUpdated)
 	appRuntime.SetAlertHandler(app.handleAlert)
 	return app, nil
@@ -53,7 +66,7 @@ func (a *App) handler() http.Handler {
 }
 
 // prepareAPI gives the desktop and browser frontends one live backend. It
-// owns port 8080 when available, otherwise it reuses an already-running CPA
+// owns port 8090 when available, otherwise it reuses an already-running CPA
 // Orbit Monitor API and proxies desktop /api requests to that process.
 func (a *App) prepareAPI(address string) error {
 	listener, listenErr := net.Listen("tcp", address)
@@ -77,7 +90,7 @@ func (a *App) prepareAPI(address string) error {
 
 	baseURL := "http://" + address
 	if !monitorAPIHealthy(baseURL) {
-		return fmt.Errorf("listen on %s: %w; the existing listener is not CPA Orbit", address, listenErr)
+		return fmt.Errorf("listen on %s: %w; the existing listener is not a compatible CPA Orbit %s backend", address, listenErr, compatibleMonitorAPIVersion)
 	}
 	target, err := url.Parse(baseURL)
 	if err != nil {
@@ -112,10 +125,12 @@ func monitorAPIHealthy(baseURL string) bool {
 		return false
 	}
 	var payload struct {
-		Status string `json:"status"`
-		Name   string `json:"name"`
+		Status  string `json:"status"`
+		Name    string `json:"name"`
+		Version string `json:"version"`
 	}
-	return json.NewDecoder(response.Body).Decode(&payload) == nil && payload.Status == "ok" && payload.Name == "CPA Orbit"
+	return json.NewDecoder(response.Body).Decode(&payload) == nil &&
+		payload.Status == "ok" && payload.Name == "CPA Orbit" && payload.Version == compatibleMonitorAPIVersion
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -136,8 +151,8 @@ func (a *App) shutdown(context.Context) {
 		a.cancel()
 		a.cancel = nil
 	}
-	if err := a.companion.Stop(); err != nil {
-		log.Printf("stop CLIProxyAPI: %v", err)
+	if err := a.companions.Stop(); err != nil {
+		log.Printf("stop desktop companions: %v", err)
 	}
 	if a.apiServer != nil {
 		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)

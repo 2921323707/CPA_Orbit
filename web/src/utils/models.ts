@@ -23,6 +23,13 @@ export const subscriptionExpiresAt = (item: Subscription) => item.expired ?? ite
 export const subscriptionPlan = (item: Subscription) => String(item.planType ?? item.plan ?? '—')
 export const subscriptionLastError = (item: Subscription) => String(item.connectivity?.error ?? item.lastError ?? item.last_error ?? '')
 export const subscriptionCheckedAt = (item: Subscription) => item.connectivity?.checkedAt ?? item.checkedAt ?? item.checked_at
+export const subscriptionCheckFreshness = (item: Subscription, now = Date.now()) => {
+  const checkedAt = subscriptionCheckedAt(item)
+  if (!checkedAt) return 'never' as const
+  const timestamp = Date.parse(checkedAt)
+  if (!Number.isFinite(timestamp) || now - timestamp > 15 * 60 * 1000) return 'stale' as const
+  return 'fresh' as const
+}
 export const subscriptionSyncedToCpa = (item: Subscription) => item.syncedToCpa ?? item.synced_to_cpa ?? false
 
 export const alertCreatedAt = (item: Alert) => item.createdAt ?? item.created_at
@@ -34,6 +41,7 @@ export const statActionRequired = (stats: DashboardStats) => stats.actionRequire
 
 export const settingsPriceThreshold = (settings: Settings) => settings.threshold ?? settings.priceThreshold ?? settings.price_threshold ?? 0
 export const settingsRefreshInterval = (settings: Settings) => settings.refreshMinutes ?? settings.refreshInterval ?? settings.refresh_interval ?? 1
+export const settingsAccountPollInterval = (settings: Settings) => settings.accountPollMinutes ?? settings.account_poll_minutes ?? 5
 export const settingsBaseUrl = (settings: Settings) => String(settings.baseUrl ?? settings.base_url ?? '')
 export const settingsWebhookUrl = (settings: Settings) => String(settings.webhookUrl ?? settings.webhook_url ?? '')
 export const settingsAllowRemote = (settings: Settings) => settings.allowRemoteBaseUrl ?? settings.allow_remote_base_url ?? false

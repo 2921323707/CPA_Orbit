@@ -45,12 +45,34 @@ func (c *Client) Deploy(ctx context.Context, credential gateways.Credential, opt
 	if len(bytes.TrimSpace(credential.Data)) == 0 {
 		return gateways.DeploymentResult{}, errors.New("Sub2API deployment requires a credential body")
 	}
+	content := credential.Data
+	lookupEmail := credential.Email
+	bundleAccount, isBundle, err := parseSub2APIDataAccount(credential.Data)
+	if err != nil {
+		return gateways.DeploymentResult{}, err
+	}
+	if isBundle {
+		content = bundleAccount.Credentials
+		lookupEmail = firstNonEmpty(bundleAccount.Email, lookupEmail)
+		if strings.TrimSpace(options.Name) == "" {
+			options.Name = bundleAccount.Name
+		}
+		if options.Concurrency == 0 {
+			options.Concurrency = bundleAccount.Concurrency
+		}
+		if options.Priority == 0 {
+			options.Priority = bundleAccount.Priority
+		}
+		if options.RateMultiplier == 0 {
+			options.RateMultiplier = bundleAccount.RateMultiplier
+		}
+	}
 	name := strings.TrimSpace(options.Name)
 	if name == "" {
-		name = firstNonEmpty(credential.Email, credential.SubscriptionID, "Orbit Codex account")
+		name = firstNonEmpty(lookupEmail, credential.SubscriptionID, "Orbit Codex account")
 	}
 	request := CodexSessionImportRequest{
-		Content:          string(credential.Data),
+		Content:          codexSessionContent(content),
 		Name:             name,
 		GroupIDs:         append([]int64(nil), options.GroupIDs...),
 		Concurrency:      options.Concurrency,
@@ -58,6 +80,10 @@ func (c *Client) Deploy(ctx context.Context, credential gateways.Credential, opt
 		RateMultiplier:   options.RateMultiplier,
 		UpdateExisting:   options.UpdateExisting,
 		CredentialExtras: map[string]any{"orbit_subscription_id": credential.SubscriptionID},
+	}
+	if isBundle {
+		request.AutoPauseOnExpired = bundleAccount.AutoPauseOnExpired
+		request.Extra = bundleAccount.Extra
 	}
 	if notes := strings.TrimSpace(options.Notes); notes != "" {
 		request.Notes = &notes
@@ -74,11 +100,11 @@ func (c *Client) Deploy(ctx context.Context, credential gateways.Credential, opt
 			break
 		}
 	}
-	if accountID == 0 && credential.Email != "" {
-		page, err := c.ListAccounts(ctx, 1, 20, credential.Email)
+	if accountID == 0 && lookupEmail != "" {
+		page, err := c.ListAccounts(ctx, 1, 20, lookupEmail)
 		if err == nil {
 			for _, account := range page.Items {
-				if strings.EqualFold(strings.TrimSpace(account.Email), strings.TrimSpace(credential.Email)) || strings.EqualFold(strings.TrimSpace(account.Name), strings.TrimSpace(credential.Email)) {
+				if strings.EqualFold(strings.TrimSpace(account.Email), strings.TrimSpace(lookupEmail)) || strings.EqualFold(strings.TrimSpace(account.Name), strings.TrimSpace(lookupEmail)) {
 					accountID = account.ID
 					break
 				}
@@ -96,6 +122,94 @@ func (c *Client) Deploy(ctx context.Context, credential gateways.Credential, opt
 	}
 	id := strconv.FormatInt(accountID, 10)
 	return gateways.DeploymentResult{Binding: gateways.BindingRef{ExternalID: id, ExternalRef: "account:" + id, Managed: true}, Status: status}, nil
+}
+
+type sub2APIDataAccount struct {
+	Name               string          `json:"name"`
+	Platform           string          `json:"platform"`
+	Type               string          `json:"type"`
+	Credentials        json.RawMessage `json:"credentials"`
+	Extra              map[string]any  `json:"extra"`
+	Concurrency        int             `json:"concurrency"`
+	Priority           int             `json:"priority"`
+	RateMultiplier     float64         `json:"rate_multiplier"`
+	AutoPauseOnExpired bool            `json:"auto_pause_on_expired"`
+	Email              string          `json:"-"`
+}
+
+func parseSub2APIDataAccount(data []byte) (sub2APIDataAccount, bool, error) {
+	if !gateways.IsSub2APIDataPackage(data) {
+		return sub2APIDataAccount{}, false, nil
+	}
+	var envelope struct {
+		Type     string               `json:"type"`
+		Accounts []sub2APIDataAccount `json:"accounts"`
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return sub2APIDataAccount{}, false, fmt.Errorf("invalid credential JSON: %w", err)
+	}
+	if len(envelope.Accounts) != 1 {
+		return sub2APIDataAccount{}, true, fmt.Errorf("Sub2API data import must contain exactly one account; got %d", len(envelope.Accounts))
+	}
+	account := envelope.Accounts[0]
+	if !strings.EqualFold(strings.TrimSpace(account.Platform), "openai") || !strings.EqualFold(strings.TrimSpace(account.Type), "oauth") {
+		return sub2APIDataAccount{}, true, errors.New("Sub2API data account must be an OpenAI OAuth account")
+	}
+	var credentials map[string]any
+	if err := json.Unmarshal(account.Credentials, &credentials); err != nil || len(credentials) == 0 {
+		return sub2APIDataAccount{}, true, errors.New("Sub2API data account is missing credentials")
+	}
+	account.Email = firstNonEmpty(stringMapValue(credentials, "email"), stringMapValue(account.Extra, "email"), account.Name)
+	return account, true, nil
+}
+
+func stringMapValue(values map[string]any, key string) string {
+	if values == nil {
+		return ""
+	}
+	value, ok := values[key].(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(value)
+}
+
+// codexSessionContent removes client-routing metadata before handing a Codex
+// credential to Sub2API. The archived source remains untouched, while a
+// legacy CPA base_url can never become an implicit Sub2API routing setting.
+func codexSessionContent(data []byte) string {
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return string(data)
+	}
+	changed := false
+	removeRoutingField := func(object map[string]any) {
+		for key := range object {
+			normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(key), "_", ""))
+			if normalized == "baseurl" {
+				delete(object, key)
+				changed = true
+			}
+		}
+	}
+	switch typed := value.(type) {
+	case map[string]any:
+		removeRoutingField(typed)
+	case []any:
+		for _, item := range typed {
+			if object, ok := item.(map[string]any); ok {
+				removeRoutingField(object)
+			}
+		}
+	}
+	if !changed {
+		return string(data)
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return string(data)
+	}
+	return string(encoded)
 }
 
 func (c *Client) Inspect(ctx context.Context, binding gateways.BindingRef, _ gateways.Credential) (gateways.InspectResult, error) {

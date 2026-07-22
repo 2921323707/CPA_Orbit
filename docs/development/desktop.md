@@ -1,6 +1,6 @@
 # CPA Orbit Desktop
 
-This directory contains the lightweight Wails desktop host for the existing Go backend and Vue frontend. It uses the operating system WebView, embeds the production frontend, and exposes the shared Monitor API on `127.0.0.1:8080` so the desktop and browser frontends use one live backend.
+This directory contains the lightweight Wails desktop host for the existing Go backend and Vue frontend. It uses the operating system WebView, embeds the production frontend, and exposes the shared Monitor API on `127.0.0.1:8090` so the desktop and browser frontends use one live backend without colliding with Sub2API's standard port 8080.
 
 ## Windows one-click build
 
@@ -34,8 +34,8 @@ GitHub Actions runs the ARM64 build natively on Apple Silicon for every pull req
 
 When `app/build/bin/CPAOrbit.exe` is launched inside this repository, it automatically:
 
-- uses the repository root as the application data directory, sharing `data/`, `k12/`, settings, API keys, alerts, histories, and subscription state with the browser frontend;
-- starts the Monitor API on `127.0.0.1:8080`, or reuses an existing healthy CPA Orbit Monitor API on that address;
+- uses the repository root as the application data directory, sharing `data/`, `subscriptions/`, settings, API keys, alerts, histories, and subscription state with the browser frontend;
+- starts the Monitor API on `127.0.0.1:8090`, or reuses an existing compatible CPA Orbit Monitor API on that address;
 - starts `cpa/app/cli-proxy-api.exe` with `cpa/app/config.yaml` when port 8317 is not already listening; and
 - stops only the companion process that the desktop application started itself.
 
@@ -52,7 +52,7 @@ Standalone copies outside the repository store mutable files under the current u
 - Windows: `%AppData%\CPA Orbit`
 - macOS: `~/Library/Application Support/CPA Orbit`
 
-The directory contains the existing portable layout (`data/` and `k12/`). To migrate to another computer or operating system, close CPA Orbit, copy this directory, and point the new installation at it.
+The directory contains the existing portable layout (`data/` and provider/date `subscriptions/`). To migrate to another computer or operating system, close CPA Orbit, copy this directory, and point the new installation at it. Protect backups with encryption and access controls: local settings and credential archives may be plaintext unless the host filesystem provides encryption. Older `k12/` archives are migrated into `subscriptions/sub2api/` on first startup.
 
 For portable or custom storage, copy `cpa-orbit.config.example.json` next to the executable/app launcher as `cpa-orbit.config.json` and edit `dataDir`. A relative `dataDir` is resolved relative to the configuration file, so the EXE, configuration, and data directory can be moved together.
 
@@ -75,4 +75,4 @@ From `app/`:
 go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev
 ```
 
-The Wails project uses `../web` as its frontend source. Desktop builds use hash routing and same-origin `/api`, which is handled by the same Runtime exposed to browser development at `http://127.0.0.1:8080/api`.
+The Wails project uses `../web` as its frontend source. Desktop builds use hash routing and same-origin `/api`, which is handled by the same Runtime exposed to browser development at `http://127.0.0.1:8090/api`.

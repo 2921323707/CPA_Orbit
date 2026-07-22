@@ -13,8 +13,8 @@ CPA Orbit is a local-first modular monolith. Modules share one Go control plane 
 |---|---|---|
 | Overview | Operational summary | Read-only aggregation |
 | Price intelligence | K12 / GPT Plus snapshots and trends | `data/offers.json`, `data/price_history.json` |
-| Subscription assets | Archive, deduplicate, project, and check accounts | `k12/` source, `cpa/auths/` projection |
-| Pool operations | Gateway targets, managed bindings, migrations, and Token telemetry | `data/control-plane.db`; Sub2API owns raw request logs |
+| Subscription assets | Safe preflight, archive, explicit assignment, and account checks | `subscriptions/{sub2api,cpa}/MMDD/` source, `cpa/auths/` projection |
+| Gateway settings | Configure local CPA/Sub2API targets and reconcile assignments | `data/control-plane.db`; companion owns runtime state |
 | Alerts | Threshold history and webhook delivery | `data/alerts.json` |
 | Settings | Endpoints, schedules, thresholds, backend keys | `data/settings.json` |
 | Desktop host | Startup, tray, notifications, native integration | Reuses the same runtime |
@@ -25,20 +25,20 @@ K12 and GPT Plus sources share a refresh schedule and retain a truthful 14-day a
 
 ## Subscription assets
 
-The archive under `k12/MMDD` is the source of truth. `cpa/auths` is a rebuildable runtime projection for CLIProxyAPI. Health checks distinguish HTTP 401, HTTP 402, exhausted quota, rate limits, disabled accounts, and archives outside the active pool.
+The archive under `subscriptions/{sub2api,cpa}/MMDD` is the source of truth. `cpa/auths` is a rebuildable runtime projection for CLIProxyAPI. Health checks distinguish HTTP 401, HTTP 402, exhausted quota, rate limits, disabled accounts, and archives outside the active pool.
 
 ## CPA runtime
 
 Monitor API and CLIProxyAPI have independent health signals. The default endpoints are:
 
 ```text
-Monitor API  http://127.0.0.1:8080/api
+Monitor API  http://127.0.0.1:8090/api
 CLIProxyAPI  http://127.0.0.1:8317/v1
 ```
 
-## Sub2API control plane
+## Gateway settings and account checks
 
-Sub2API is the preferred primary subscription pool; CPA remains a lightweight fallback. Orbit stores durable target and binding state, imports Codex sessions through the official Sub2API administrator API, and retains bounded fifteen-minute usage aggregates. Read the [pool guide](/guide/sub2api-pool) before enabling two gateway targets.
+Gateway configuration lives under **Settings → Gateways**. CPA and the generic local Sub2API companion use explicit compatible-target assignment; Orbit never performs automatic fallback. Account status/quota polling is distinct from offer monitoring, runs every five minutes by default, and is disabled when its interval is `0`. Read the [gateway guide](/guide/sub2api-pool) before assigning an Auth JSON.
 
 ## Alerts and SMS
 

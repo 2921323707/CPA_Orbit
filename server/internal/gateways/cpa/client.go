@@ -110,6 +110,9 @@ func (c *Client) Deploy(ctx context.Context, credential gateways.Credential, _ g
 	if err := ctx.Err(); err != nil {
 		return gateways.DeploymentResult{}, err
 	}
+	if gateways.IsSub2APIDataPackage(credential.Data) {
+		return gateways.DeploymentResult{}, errors.New("Sub2API data package requires a Sub2API gateway target")
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	cfg := c.config()

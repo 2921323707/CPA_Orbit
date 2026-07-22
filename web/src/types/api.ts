@@ -194,6 +194,8 @@ export interface Settings {
   refreshMinutes?: number
   refreshInterval?: number
   refresh_interval?: number
+  accountPollMinutes?: number
+  account_poll_minutes?: number
   baseUrl?: string
   base_url?: string
   apiKey?: string
@@ -229,6 +231,7 @@ export interface SubscriptionPage {
 
 export interface SubscriptionInsights {
   normal: number
+  pending: number
   error: number
   priced: number
   totalCost: number
@@ -244,10 +247,83 @@ export interface SubscriptionQuery {
   search?: string
 }
 
-export interface ImportSubscriptionsOptions {
+export interface ImportIdentitySummary {
+  provider: string
+  type?: string
+  email?: string
+  accountId?: string
+  recognizedFields: string[]
+}
+
+export interface ImportTargetCompatibility {
+  compatible: boolean
+  reasonCode: string
+}
+
+export interface ImportAnalysisState {
+  state?: 'none' | 'duplicate' | 'conflict' | 'unknown' | string
+  reasonCode?: string
+  message?: string
+}
+
+export interface ImportAnalysis {
+  version: string
+  format: string
+  identity: ImportIdentitySummary
+  compatibility: Partial<Record<'cpa' | 'sub2api', ImportTargetCompatibility>>
+  digest: string
+  duplicate?: ImportAnalysisState
+  conflict?: ImportAnalysisState
+}
+
+export interface ImportTargetOption {
+  targetId: number
+  kind: 'sub2api' | 'cpa'
+  name: string
+  enabled: boolean
+  compatible: boolean
+  reasonCode: string
+}
+
+export interface ImportPreflightResponse {
+  operationId: string
+  expiresAt: string
+  preflightToken: string
+  analysis: ImportAnalysis
+  targets: ImportTargetOption[]
+}
+
+export interface ImportPreflightOptions {
   file: File
+}
+
+export interface ImportCommitOptions {
+  file: File
+  preflightToken: string
+  targetId: number
   acquisitionPrice?: string
-  deploy?: boolean
+}
+
+export interface ImportCommitResponse {
+  subscription: Subscription
+  deployment: DeploymentBinding | null
+  idempotent: boolean
+}
+
+export interface SubscriptionPollStatus {
+  enabled: boolean
+  running: boolean
+  intervalMinutes: number
+  nextRunAt?: string
+  lastStartedAt?: string
+  lastFinishedAt?: string
+  totalAccounts: number
+  completed: number
+  succeeded: number
+  failed: number
+  runsStarted: number
+  runsCompleted: number
+  lastError?: string
 }
 
 export interface GatewayTarget {

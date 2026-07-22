@@ -1,6 +1,6 @@
 ---
 title: Sub2API subscription pools
-description: Configure Sub2API as the primary gateway, keep CPA as a safe fallback, and understand ownership and telemetry.
+description: Configure local CPA or Sub2API companions, preflight Auth JSON, and assign each credential explicitly.
 ---
 
 # Sub2API subscription pools
@@ -11,37 +11,36 @@ CPA Orbit treats the subscription archive, runtime gateways, and usage history a
 
 | Object | Authority | Purpose |
 |---|---|---|
-| Subscription archive | CPA Orbit `k12/` | Original credential document, acquisition cost, provenance, and recovery source |
-| Gateway target | CPA Orbit `control-plane.db` | Sub2API or CPA endpoint, role, deployment defaults, and write-only admin secret |
+| Subscription archive | CPA Orbit `subscriptions/sub2api/MMDD/` | Original credential document, acquisition cost, provenance, and recovery source |
+| Gateway target | CPA Orbit `control-plane.db` | Sub2API or CPA endpoint, compatibility contract, deployment defaults, and write-only admin secret |
 | Deployment binding | CPA Orbit `control-plane.db` | Desired and observed relation between one archive and one runtime account |
 | Runtime account | Sub2API or CPA | Scheduling, refreshed credentials, groups, concurrency, and live quota state |
 | Usage details | Sub2API | Authoritative request log and billing detail |
 | Usage aggregates | CPA Orbit `control-plane.db` | Fifteen-minute Token/cost continuity, retained for up to 90 days |
 
-Sub2API is the normal primary target. CPA remains a lightweight local fallback. A fallback deployment is attempted when the primary import fails; it is not request-by-request traffic failover. Keeping the same refresh token active in both gateways could cause competing rotations, so switching gateways uses an explicit detach/deploy migration with rollback.
+CPA and Sub2API are independent configurable local companions. Each compatible Auth JSON must be assigned explicitly to exactly one target; Orbit never performs automatic fallback or request-by-request traffic switching. Keeping the same refresh credential active in both gateways could cause competing rotations, so moving a credential requires an explicit detach/deploy action with a visible reconciliation state.
 
 ## Configure a Sub2API target
 
 1. Start Sub2API and generate an administrator API key.
-2. Open **Pool operations → Add Sub2API**.
-3. Enter the management base URL and admin key. A local URL such as `http://127.0.0.1:8080` is recommended.
+2. Open **Settings → Gateways** (`/settings?section=gateways`) and configure a local Sub2API companion.
+3. Enter the management base URL and admin key. The standard local Sub2API endpoint `http://127.0.0.1:8080` can be used directly; Orbit uses its own control port at `8090`.
 4. Optionally set group IDs, account concurrency, scheduling priority, and cost multiplier.
-5. Mark the target as primary, save it, and run **Check connection**.
+5. Save the target and run **Check connection**. Import still requires selecting this target explicitly.
 
 Remote targets require an explicit opt-in and HTTPS. The admin key is write-only: it is stored locally and never returned by the public API or shown in operation logs.
 
-CPA targets reuse the connection, key, authorization directory, and synchronization switch under **Settings → CPA sync**. The control-plane target only records whether CPA is enabled and whether it is primary or fallback.
+Configure the local CPA companion from **Settings → Gateways** as well; its connection, authorization directory, and synchronization settings remain local. The generic Sub2API contract is configured alongside CPA, and each target's admin key is write-only.
 
 ## Import and deploy GPT Plus/Codex JSON
 
-In **Subscription files**, leave **Deploy to primary pool after import** enabled and select one or more Codex session JSON files. Orbit performs these steps:
+In **Subscription files**, select an Auth JSON and choose exactly one compatible configured target. Orbit performs a two-stage flow:
 
 ```text
-validate and deduplicate → archive locally → deploy to Sub2API primary
-                                           ↘ CPA fallback if primary import fails
+local safe preflight → provider/date archive → explicit deploy to CPA or Sub2API
 ```
 
-The archive is retained even if both deployments fail, and the UI reports that the runtime binding needs attention. Existing archives can be deployed later from their detail drawer. A subscription running on CPA fallback can use **Return to primary pool**; if destination deployment fails, Orbit attempts to restore the source binding.
+The archive is retained if deployment fails. A pending or uncertain remote result is shown for reconciliation; Orbit does not silently retry against another target or create a second assignment. Existing archives can be assigned later from their detail drawer.
 
 ## Ownership and safe deletion
 
@@ -51,7 +50,7 @@ The archive is retained even if both deployments fail, and the UI reports that t
 
 ## Telemetry
 
-The operations page shows gateway health, active bindings, recent deployment operations, current Sub2API totals, and a seven-day Token chart. Orbit collects every five minutes and supports a manual refresh. Failed collection marks the snapshot stale but preserves the last valid values.
+Account status and quota checks are separate from offer monitoring. They poll every five minutes by default; set the interval to `0` to disable scheduled polling, and use an explicit manual check when needed. A failed or uncertain check is marked accordingly without changing the credential assignment.
 
 Raw request logs remain in Sub2API. Orbit stores normalized fifteen-minute aggregates containing request counts, successes/failures, input/output/cache tokens, duration, first-token latency, and cost. Aggregates older than 90 days are deleted automatically.
 

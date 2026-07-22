@@ -2,11 +2,16 @@ package httpapi
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,9 +20,12 @@ import (
 	"strings"
 	"time"
 
+	"cpa-monitor/server/internal/accounthealth"
 	"cpa-monitor/server/internal/config"
 	"cpa-monitor/server/internal/controlplane"
 	"cpa-monitor/server/internal/deployments"
+	"cpa-monitor/server/internal/gateways"
+	"cpa-monitor/server/internal/model"
 	"cpa-monitor/server/internal/observability"
 	"cpa-monitor/server/internal/subscriptions"
 )
@@ -32,11 +40,18 @@ type Server struct {
 	control        *controlplane.Store
 	deployments    *deployments.Coordinator
 	collector      *observability.Collector
+	poller         *accounthealth.Scheduler
 	settingsUpdate func(config.Settings)
+	preflightKey   []byte
+	now            func() time.Time
 }
 
 func NewServer(settings *config.Store, monitor *Monitor, subs *subscriptions.Manager, control *controlplane.Store, coordinator *deployments.Coordinator, collector *observability.Collector) *Server {
-	return &Server{settings: settings, monitor: monitor, subs: subs, control: control, deployments: coordinator, collector: collector}
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		panic("preflight key generation failed")
+	}
+	return &Server{settings: settings, monitor: monitor, subs: subs, control: control, deployments: coordinator, collector: collector, preflightKey: key, now: time.Now}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -45,6 +60,10 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) SetSettingsUpdateHandler(handler func(config.Settings)) {
 	s.settingsUpdate = handler
+}
+
+func (s *Server) SetAccountPoller(poller *accounthealth.Scheduler) {
+	s.poller = poller
 }
 
 func (s *Server) route(w http.ResponseWriter, r *http.Request) {
@@ -212,6 +231,32 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"buckets": buckets, "snapshots": s.collector.Snapshots(), "from": to.Add(-time.Duration(days) * 24 * time.Hour), "to": to})
 	case strings.HasPrefix(path, "/api/gateways/targets/"):
 		s.handleGatewayTargetAction(w, r, path)
+	case path == "/api/subscriptions/poll-status":
+		if !requireMethod(w, r, http.MethodGet) {
+			return
+		}
+		if s.poller == nil {
+			writeError(w, http.StatusServiceUnavailable, "poller_unavailable", "account polling is unavailable")
+			return
+		}
+		writeJSON(w, http.StatusOK, s.poller.Status())
+	case path == "/api/subscriptions/poll-now":
+		if !requireMethod(w, r, http.MethodPost) {
+			return
+		}
+		if s.poller == nil {
+			writeError(w, http.StatusServiceUnavailable, "poller_unavailable", "account polling is unavailable")
+			return
+		}
+		if err := s.poller.PollNow(); err != nil {
+			if errors.Is(err, accounthealth.ErrAlreadyRunning) {
+				writeError(w, http.StatusConflict, "poll_in_progress", err.Error())
+				return
+			}
+			writeError(w, http.StatusServiceUnavailable, "poller_unavailable", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]any{"started": true})
 	case path == "/api/subscriptions":
 		if !requireMethod(w, r, http.MethodGet) {
 			return
@@ -220,11 +265,21 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 		pageSize := queryInt(r, "pageSize", 10)
 		result := s.subs.Page(r.URL.Query().Get("folder"), r.URL.Query().Get("status"), r.URL.Query().Get("search"), page, pageSize)
 		writeJSON(w, http.StatusOK, result)
+	case path == "/api/subscriptions/import/preflight":
+		if !requireMethod(w, r, http.MethodPost) {
+			return
+		}
+		s.handleImportPreflight(w, r)
+	case path == "/api/subscriptions/import/commit":
+		if !requireMethod(w, r, http.MethodPost) {
+			return
+		}
+		s.handleImportCommit(w, r)
 	case path == "/api/subscriptions/import":
 		if !requireMethod(w, r, http.MethodPost) {
 			return
 		}
-		s.handleImport(w, r)
+		writeError(w, http.StatusGone, "import_endpoint_migrated", "use /api/subscriptions/import/preflight then /api/subscriptions/import/commit")
 	case strings.HasPrefix(path, "/api/subscriptions/"):
 		s.handleSubscriptionAction(w, r, path)
 	case path == "/api/alerts":
@@ -448,6 +503,7 @@ func (s *Server) handleLubanKey(w http.ResponseWriter, r *http.Request) {
 type settingsUpdate struct {
 	Threshold            *float64 `json:"threshold"`
 	RefreshMinutes       *int     `json:"refreshMinutes"`
+	AccountPollMinutes   *int     `json:"accountPollMinutes"`
 	WebhookURL           *string  `json:"webhookUrl"`
 	BaseURL              *string  `json:"baseUrl"`
 	APIKey               *string  `json:"apiKey"`
@@ -477,6 +533,9 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if input.RefreshMinutes != nil {
 			current.RefreshMinutes = *input.RefreshMinutes
+		}
+		if input.AccountPollMinutes != nil {
+			current.AccountPollMinutes = *input.AccountPollMinutes
 		}
 		if input.WebhookURL != nil {
 			current.WebhookURL = *input.WebhookURL
@@ -519,10 +578,217 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			s.settingsUpdate(current)
 		}
 		s.monitor.ResetSchedule()
+		if s.poller != nil {
+			s.poller.ResetSchedule()
+		}
 		writeJSON(w, http.StatusOK, s.settings.Public())
 	default:
 		methodNotAllowed(w, http.MethodGet, http.MethodPut)
 	}
+}
+
+type preflightClaims struct {
+	Version, Digest, OperationID string
+	Expires                      int64
+}
+
+func readImportFile(w http.ResponseWriter, r *http.Request) ([]byte, *multipart.FileHeader, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes+64*1024)
+	if err := r.ParseMultipartForm(maxUploadBytes + 64*1024); err != nil {
+		writeError(w, http.StatusRequestEntityTooLarge, "upload_too_large", "multipart upload exceeds 2 MB file limit")
+		return nil, nil, false
+	}
+	if len(r.MultipartForm.Value) != 0 || len(r.MultipartForm.File) != 1 || len(r.MultipartForm.File["file"]) != 1 {
+		writeError(w, http.StatusBadRequest, "file_only_required", "multipart request must contain exactly one file field")
+		return nil, nil, false
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "missing_file", "multipart field 'file' is required")
+		return nil, nil, false
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxUploadBytes+1))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "read_failed", "failed to read upload")
+		return nil, nil, false
+	}
+	if len(data) > maxUploadBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "upload_too_large", "JSON file exceeds 2 MB")
+		return nil, nil, false
+	}
+	return data, header, true
+}
+
+func (s *Server) handleImportPreflight(w http.ResponseWriter, r *http.Request) {
+	data, _, ok := readImportFile(w, r)
+	if !ok {
+		return
+	}
+	analysis, err := subscriptions.AnalyzeAuthJSON(data)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_auth_json", err.Error())
+		return
+	}
+	if _, duplicate, duplicateErr := s.subs.ExactDuplicate(data); duplicateErr != nil {
+		writeError(w, http.StatusBadRequest, "duplicate_check_failed", "could not check existing archives")
+		return
+	} else if duplicate {
+		analysis.Duplicate = subscriptions.AuthAnalysisState{State: "duplicate", ReasonCode: "exact_duplicate", Message: "相同 JSON 已归档"}
+		analysis.Compatibility[gateways.KindCPA] = subscriptions.TargetCompatibility{ReasonCode: "exact_duplicate"}
+		analysis.Compatibility[gateways.KindSub2API] = subscriptions.TargetCompatibility{ReasonCode: "exact_duplicate"}
+	}
+	if assignment, assignmentErr := s.control.CredentialAssignment(r.Context(), analysis.Identity.LogicalID); assignmentErr == nil && assignment.Status != "failed" && assignment.Status != "released" {
+		analysis.Conflict = subscriptions.AuthAnalysisState{State: "conflict", ReasonCode: "active_assignment_exists", Message: "该凭证已有运行池分配"}
+		analysis.Compatibility[gateways.KindCPA] = subscriptions.TargetCompatibility{ReasonCode: "active_assignment_exists"}
+		analysis.Compatibility[gateways.KindSub2API] = subscriptions.TargetCompatibility{ReasonCode: "active_assignment_exists"}
+	} else if assignmentErr != nil && !errors.Is(assignmentErr, sql.ErrNoRows) {
+		writeError(w, http.StatusInternalServerError, "assignment_check_failed", "could not check runtime assignments")
+		return
+	}
+	targets, err := s.deployments.Targets(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "targets_failed", "gateway targets unavailable")
+		return
+	}
+	compatible := make([]map[string]any, 0)
+	for _, target := range targets {
+		compat := analysis.Compatibility[gateways.Kind(target.Kind)]
+		compatible = append(compatible, map[string]any{"targetId": target.ID, "kind": target.Kind, "name": target.Name, "enabled": target.Enabled, "compatible": compat.Compatible, "reasonCode": compat.ReasonCode})
+	}
+	opBytes := make([]byte, 16)
+	_, _ = rand.Read(opBytes)
+	claims := preflightClaims{Version: analysis.Version, Digest: analysis.Digest, OperationID: hex.EncodeToString(opBytes), Expires: s.now().Add(5 * time.Minute).Unix()}
+	token := s.signPreflight(claims)
+	writeJSON(w, http.StatusOK, map[string]any{"operationId": claims.OperationID, "expiresAt": time.Unix(claims.Expires, 0).UTC(), "preflightToken": token, "analysis": analysis, "targets": compatible})
+}
+
+func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request) {
+	targetValues := r.URL.Query()["targetId"]
+	if len(targetValues) != 1 {
+		writeError(w, http.StatusBadRequest, "single_target_required", "exactly one targetId is required")
+		return
+	}
+	targetID, err := strconv.ParseInt(targetValues[0], 10, 64)
+	if err != nil || targetID <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid_target", "targetId must be a positive integer")
+		return
+	}
+	claims, err := s.verifyPreflight(strings.TrimSpace(r.Header.Get("X-Orbit-Preflight-Token")))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid_preflight_token", "preflight token is invalid or expired")
+		return
+	}
+	data, header, ok := readImportFile(w, r)
+	if !ok {
+		return
+	}
+	analysis, err := subscriptions.AnalyzeAuthJSON(data)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_auth_json", err.Error())
+		return
+	}
+	if analysis.Version != claims.Version || analysis.Digest != claims.Digest {
+		writeError(w, http.StatusConflict, "preflight_digest_mismatch", "uploaded file does not match preflight")
+		return
+	}
+	target, err := s.control.GatewayTarget(r.Context(), targetID)
+	if err != nil || !target.Enabled {
+		writeError(w, http.StatusBadRequest, "target_unavailable", "target is missing or disabled")
+		return
+	}
+	compat := analysis.Compatibility[gateways.Kind(target.Kind)]
+	if !compat.Compatible {
+		writeError(w, http.StatusBadRequest, compat.ReasonCode, "authentication JSON is incompatible with the selected target")
+		return
+	}
+	op, created, err := s.control.ReserveImportOperation(r.Context(), controlplane.ImportOperation{ID: claims.OperationID, Digest: claims.Digest, TargetID: targetID, Status: "running"})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "import_reservation_failed", "import could not be reserved")
+		return
+	}
+	if !created {
+		if op.Digest != claims.Digest || op.TargetID != targetID {
+			writeError(w, http.StatusConflict, "operation_conflict", "preflight operation was already used differently")
+			return
+		}
+		if op.Status == "succeeded" {
+			sub, found := s.subs.Get(op.SubscriptionID)
+			if !found {
+				writeError(w, http.StatusConflict, "operation_incomplete", "import operation archive is unavailable")
+				return
+			}
+			bindings, _ := s.deployments.Bindings(r.Context(), sub.ID)
+			writeJSON(w, http.StatusOK, map[string]any{"subscription": sub, "deployment": bindingForTarget(bindings, targetID), "idempotent": true})
+			return
+		}
+		writeError(w, http.StatusConflict, "operation_in_progress", "import operation is already in progress")
+		return
+	}
+	provider := string(gateways.KindSub2API)
+	if gateways.Kind(target.Kind) == gateways.KindCPA {
+		provider = string(gateways.KindCPA)
+	}
+	acquisitionPrice := strings.TrimSpace(r.URL.Query().Get("acquisitionPrice"))
+	sub, _, err := s.subs.ImportWithOptions(data, header.Filename, subscriptions.ImportOptions{
+		AcquisitionPrice: acquisitionPrice,
+		ArchiveProvider:  provider,
+		SkipLegacySync:   true,
+	})
+	if err != nil {
+		_ = s.control.CompleteImportOperation(r.Context(), claims.OperationID, "failed", "", "archive_failed")
+		writeError(w, http.StatusBadRequest, "import_failed", "subscription could not be archived")
+		return
+	}
+	binding, err := s.deployments.Deploy(r.Context(), sub.ID, targetID)
+	if err != nil {
+		_ = s.control.CompleteImportOperation(r.Context(), claims.OperationID, "failed", sub.ID, "deployment_failed")
+		writeError(w, http.StatusBadGateway, "deployment_failed", "subscription was archived but deployment failed")
+		return
+	}
+	_ = s.control.CompleteImportOperation(r.Context(), claims.OperationID, "succeeded", sub.ID, "")
+	writeJSON(w, http.StatusCreated, map[string]any{"subscription": sub, "deployment": binding, "idempotent": false})
+}
+
+func bindingForTarget(bindings []controlplane.DeploymentBinding, targetID int64) any {
+	for _, binding := range bindings {
+		if binding.TargetID == targetID {
+			return binding
+		}
+	}
+	return nil
+}
+
+func (s *Server) signPreflight(claims preflightClaims) string {
+	payload, _ := json.Marshal(claims)
+	encoded := hex.EncodeToString(payload)
+	mac := hmac.New(sha256.New, s.preflightKey)
+	_, _ = mac.Write([]byte(encoded))
+	return encoded + "." + hex.EncodeToString(mac.Sum(nil))
+}
+func (s *Server) verifyPreflight(token string) (preflightClaims, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 2 {
+		return preflightClaims{}, errors.New("invalid")
+	}
+	signature, err := hex.DecodeString(parts[1])
+	if err != nil {
+		return preflightClaims{}, errors.New("invalid")
+	}
+	mac := hmac.New(sha256.New, s.preflightKey)
+	_, _ = mac.Write([]byte(parts[0]))
+	if !hmac.Equal(signature, mac.Sum(nil)) {
+		return preflightClaims{}, errors.New("invalid")
+	}
+	payload, err := hex.DecodeString(parts[0])
+	if err != nil {
+		return preflightClaims{}, errors.New("invalid")
+	}
+	var claims preflightClaims
+	if json.Unmarshal(payload, &claims) != nil || claims.Version != subscriptions.AuthAnalysisVersion || claims.Digest == "" || claims.OperationID == "" || s.now().Unix() > claims.Expires {
+		return preflightClaims{}, errors.New("invalid")
+	}
+	return claims, nil
 }
 
 func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
@@ -551,7 +817,11 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 		acquisitionPrice = strings.TrimSpace(r.URL.Query().Get("acquisitionPrice"))
 	}
 	deployToGateway, _ := strconv.ParseBool(strings.TrimSpace(r.URL.Query().Get("deploy")))
-	sub, synced, err := s.subs.ImportWithOptions(data, header.Filename, subscriptions.ImportOptions{AcquisitionPrice: acquisitionPrice, SkipLegacySync: deployToGateway})
+	archiveProvider := "cpa"
+	if deployToGateway {
+		archiveProvider = "sub2api"
+	}
+	sub, synced, err := s.subs.ImportWithOptions(data, header.Filename, subscriptions.ImportOptions{AcquisitionPrice: acquisitionPrice, ArchiveProvider: archiveProvider, SkipLegacySync: deployToGateway})
 	if errors.Is(err, subscriptions.ErrDuplicateSubscription) {
 		message := "订阅未导入：相同账号已经存在"
 		var duplicate *subscriptions.DuplicateSubscriptionError
@@ -649,8 +919,10 @@ func (s *Server) handleSubscriptionAction(w http.ResponseWriter, r *http.Request
 	case "test":
 		result, err := s.deployments.Inspect(r.Context(), id)
 		if errors.Is(err, sql.ErrNoRows) {
-			result, err = s.subs.Test(r.Context(), id)
-		} else if err == nil {
+			result = model.Connectivity{Status: "pending", ReasonCode: "not_deployed", Error: "subscription is not deployed to a gateway", CheckedAt: time.Now()}
+			err = nil
+		}
+		if err == nil {
 			s.subs.SaveConnectivity(id, result)
 		}
 		if errors.Is(err, os.ErrNotExist) {
@@ -663,7 +935,7 @@ func (s *Server) handleSubscriptionAction(w http.ResponseWriter, r *http.Request
 		}
 		writeJSON(w, http.StatusOK, result)
 	case "sync":
-		target, err := s.subs.Sync(id)
+		binding, err := s.deployments.DeployDefault(r.Context(), id)
 		if errors.Is(err, os.ErrNotExist) {
 			writeError(w, http.StatusNotFound, "not_found", "subscription not found")
 			return
@@ -672,7 +944,7 @@ func (s *Server) handleSubscriptionAction(w http.ResponseWriter, r *http.Request
 			writeError(w, http.StatusBadRequest, "sync_failed", err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"syncedToCpa": true, "fileName": filepath.Base(target)})
+		writeJSON(w, http.StatusOK, map[string]any{"syncedToCpa": binding.TargetID != 0, "fileName": filepath.Base(binding.RemoteAccountID), "deployment": binding})
 	case "deploy":
 		var input struct {
 			TargetID int64 `json:"targetId"`
@@ -830,6 +1102,12 @@ func (s *Server) handleGatewayOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	bindings, _ := s.deployments.Bindings(r.Context(), "")
 	operations, _ := s.deployments.Operations(r.Context(), 20)
+	if bindings == nil {
+		bindings = make([]controlplane.DeploymentBinding, 0)
+	}
+	if operations == nil {
+		operations = make([]controlplane.SyncOperation, 0)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"targets": statuses, "bindings": bindings, "operations": operations, "snapshots": s.collector.Snapshots(), "checkedAt": time.Now()})
 }
 
@@ -939,7 +1217,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, POST, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Orbit-Preflight-Token")
 		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "no-store")

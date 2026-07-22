@@ -18,11 +18,13 @@ Do not include real tokens, subscription archives, account identifiers, or third
 
 ## Secret-handling rules
 
-- Never commit `k12/**/*.json`, `cpa/auths/**`, `data/*.json`, local configuration, logs, or `.env*` files.
-- The browser must never receive stored Sub2API/CPA management keys, Luban API keys, access tokens, refresh tokens, or ID tokens.
-- Remote gateway management targets require explicit opt-in and HTTPS; loopback targets remain preferred.
+- Never commit `subscriptions/**/*.json`, `cpa/auths/**`, `data/*.json`, local configuration, logs, or `.env*` files. Provider/date archives and the local control-plane state belong in a protected backup, not a public artifact.
+- The browser must never receive stored Sub2API/CPA management keys, Luban API keys, access tokens, refresh tokens, or ID tokens. Keys are write-only in the UI and API.
+- Remote gateway management targets require explicit opt-in and HTTPS; loopback targets remain preferred. Configure CPA and the generic local Sub2API companion under Settings.
+- Auth JSON goes through a local preflight and an explicit exactly-one compatible target selection; uncertain remote outcomes stay pending for reconciliation rather than triggering automatic fallback.
 - External URLs must be validated, redirects restricted, response sizes bounded, and errors sanitized.
 - Imported filenames and archive paths must remain inside the intended project directories.
+- Backups should be encrypted and access-controlled. Local settings and credential files may remain plaintext on disk unless the host filesystem provides encryption; treat them accordingly.
 - Public screenshots and test fixtures must contain synthetic or fully redacted data.
 
 ## Scope
