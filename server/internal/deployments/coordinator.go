@@ -3,6 +3,7 @@ package deployments
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -293,8 +294,66 @@ func (c *Coordinator) Bindings(ctx context.Context, subscriptionID string) ([]co
 	return c.store.ListDeploymentBindings(ctx, subscriptionID)
 }
 
+// DetachAll removes every active runtime binding before its source archive is
+// deleted. Managed bindings delete the resource created by Orbit; adopted
+// bindings only clear the local relationship because adapters treat them as
+// non-owned resources.
+func (c *Coordinator) DetachAll(ctx context.Context, subscriptionID string) error {
+	bindings, err := c.store.ListDeploymentBindings(ctx, subscriptionID)
+	if err != nil {
+		return err
+	}
+	for _, binding := range bindings {
+		if binding.DesiredState != "active" && binding.ObservedState != "active" {
+			continue
+		}
+		if _, err := c.Detach(ctx, subscriptionID, binding.TargetID); err != nil {
+			return fmt.Errorf("detach target %d: %w", binding.TargetID, err)
+		}
+	}
+	return nil
+}
+
 func (c *Coordinator) Operations(ctx context.Context, limit int) ([]controlplane.SyncOperation, error) {
 	return c.store.ListSyncOperations(ctx, limit)
+}
+
+func (c *Coordinator) Inspect(ctx context.Context, subscriptionID string) (model.Connectivity, error) {
+	bindings, err := c.store.ListDeploymentBindings(ctx, subscriptionID)
+	if err != nil {
+		return model.Connectivity{}, err
+	}
+	var selected *controlplane.DeploymentBinding
+	for i := range bindings {
+		binding := &bindings[i]
+		if binding.ObservedState != "active" || binding.DesiredState != "active" {
+			continue
+		}
+		if selected == nil || (binding.Mode == "primary" && selected.Mode != "primary") {
+			selected = binding
+		}
+	}
+	if selected == nil {
+		return model.Connectivity{}, sql.ErrNoRows
+	}
+	target, err := c.store.GatewayTarget(ctx, selected.TargetID)
+	if err != nil {
+		return model.Connectivity{}, err
+	}
+	credential, err := c.source.GatewayCredential(subscriptionID)
+	if err != nil {
+		return model.Connectivity{}, err
+	}
+	secret, err := c.store.GatewayTargetSecret(ctx, target.ID)
+	if err != nil {
+		return model.Connectivity{}, err
+	}
+	adapter, err := c.factory(target, secret)
+	if err != nil {
+		return model.Connectivity{}, err
+	}
+	result, err := adapter.Inspect(ctx, gateways.BindingRef{TargetID: strconvID(target.ID), ExternalID: selected.RemoteAccountID, Managed: selected.Ownership == "managed"}, credential)
+	return result.Connectivity, err
 }
 
 func fingerprint(data []byte) string {

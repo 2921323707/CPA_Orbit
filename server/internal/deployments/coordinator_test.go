@@ -113,6 +113,34 @@ func TestDetachDoesNotDeleteAdoptedRemoteAccount(t *testing.T) {
 	}
 }
 
+func TestDetachAllCleansManagedAndOnlyUnbindsAdoptedAccounts(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	primary, _ := store.UpsertGatewayTarget(ctx, controlplane.GatewayTarget{Kind: "sub2api", Name: "primary", BaseURL: "http://127.0.0.1:8080", Enabled: true, Primary: true})
+	fallback, _ := store.UpsertGatewayTarget(ctx, controlplane.GatewayTarget{Kind: "cpa", Name: "fallback", BaseURL: "http://127.0.0.1:8317/v1", Enabled: true})
+	_, _ = store.UpsertDeploymentBinding(ctx, controlplane.DeploymentBinding{SubscriptionID: "sub-1", TargetID: primary.ID, RemoteAccountID: "42", Ownership: "managed", DesiredState: "active", ObservedState: "active"})
+	_, _ = store.UpsertDeploymentBinding(ctx, controlplane.DeploymentBinding{SubscriptionID: "sub-1", TargetID: fallback.ID, RemoteAccountID: "adopted.json", Ownership: "adopted", DesiredState: "active", ObservedState: "active"})
+	adapters := map[int64]*fakeAdapter{primary.ID: {kind: gateways.KindSub2API}, fallback.ID: {kind: gateways.KindCPA}}
+	coordinator := NewCoordinator(store, fakeSource{credential: gateways.Credential{Data: []byte(`{}`)}}, func(target controlplane.GatewayTarget, _ string) (gateways.Adapter, error) {
+		return adapters[target.ID], nil
+	})
+	if err := coordinator.DetachAll(ctx, "sub-1"); err != nil {
+		t.Fatal(err)
+	}
+	if adapters[primary.ID].detaches != 1 || !adapters[primary.ID].lastDetach.Managed {
+		t.Fatalf("managed binding was not deleted: %+v", adapters[primary.ID])
+	}
+	if adapters[fallback.ID].detaches != 1 || adapters[fallback.ID].lastDetach.Managed {
+		t.Fatalf("adopted binding was treated as owned: %+v", adapters[fallback.ID])
+	}
+	bindings, _ := store.ListDeploymentBindings(ctx, "sub-1")
+	for _, binding := range bindings {
+		if binding.ObservedState != "detached" || binding.DesiredState != "detached" {
+			t.Fatalf("binding remains active: %+v", binding)
+		}
+	}
+}
+
 func TestValidateTargetRequiresHTTPSForRemote(t *testing.T) {
 	if err := ValidateTarget(controlplane.GatewayTarget{Kind: "sub2api", BaseURL: "http://gateway.example.com", AllowRemote: true}); err == nil {
 		t.Fatal("expected remote HTTP target rejection")

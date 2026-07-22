@@ -456,6 +456,8 @@ func (m *Manager) GatewayCredential(id string) (gateways.Credential, error) {
 
 func (m *Manager) CPAAdapter() gateways.Adapter { return m.cpa }
 
+func (m *Manager) SaveConnectivity(id string, check model.Connectivity) { m.saveCheck(id, check) }
+
 func (m *Manager) Delete(id string) error {
 	sub, ok := m.Get(id)
 	if !ok {

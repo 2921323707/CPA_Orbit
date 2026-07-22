@@ -203,10 +203,10 @@ func (c *Client) UsageRange(ctx context.Context, page, pageSize int, from, to ti
 	}
 	query := url.Values{"page": {strconv.Itoa(page)}, "page_size": {strconv.Itoa(pageSize)}}
 	if !from.IsZero() {
-		query.Set("start_date", from.UTC().Format(time.RFC3339))
+		query.Set("start_date", from.UTC().Format("2006-01-02"))
 	}
 	if !to.IsZero() {
-		query.Set("end_date", to.UTC().Format(time.RFC3339))
+		query.Set("end_date", to.UTC().Format("2006-01-02"))
 	}
 	var result UsagePage
 	err := c.do(ctx, http.MethodGet, "/usage", query, nil, &result, false)
@@ -270,6 +270,20 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	}
 	if responseBody == nil || len(bytes.TrimSpace(data)) == 0 {
 		return nil
+	}
+	var envelope struct {
+		Code    *int            `json:"code"`
+		Message string          `json:"message"`
+		Data    json.RawMessage `json:"data"`
+	}
+	if json.Unmarshal(data, &envelope) == nil && envelope.Code != nil {
+		if *envelope.Code != 0 {
+			return fmt.Errorf("Sub2API %s returned an application error", safeOperation(path))
+		}
+		if len(bytes.TrimSpace(envelope.Data)) == 0 || bytes.Equal(bytes.TrimSpace(envelope.Data), []byte("null")) {
+			return nil
+		}
+		data = envelope.Data
 	}
 	if err := json.Unmarshal(data, responseBody); err != nil {
 		return fmt.Errorf("decode Sub2API %s response failed", safeOperation(path))

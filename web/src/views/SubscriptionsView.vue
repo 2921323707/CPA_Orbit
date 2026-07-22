@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CloudUpload, Eye, ExternalLink, FileJson2, FolderSync, KeyRound, Play, Search, TestTube2, Trash2 } from 'lucide-vue-next'
+import { CloudUpload, Eye, ExternalLink, FileJson2, FolderSync, KeyRound, Network, Play, Search, TestTube2, Trash2, Unplug } from 'lucide-vue-next'
 import { computed, onMounted, ref, watch } from 'vue'
 import BaseDrawer from '../components/common/BaseDrawer.vue'
 import EmptyState from '../components/common/EmptyState.vue'
@@ -10,7 +10,7 @@ import StatusBadge from '../components/common/StatusBadge.vue'
 import QuotaCell from '../components/subscriptions/QuotaCell.vue'
 import { useToast } from '../composables/useToast'
 import { api } from '../services/api'
-import type { Subscription, SubscriptionConnectivity, SubscriptionInsights } from '../types/api'
+import type { DeploymentBinding, GatewayTarget, Subscription, SubscriptionConnectivity, SubscriptionInsights } from '../types/api'
 import { formatCurrency, formatDateTime, getErrorMessage } from '../utils/format'
 import {
   subscriptionAccountId,
@@ -37,6 +37,7 @@ const selectedIds = ref(new Set<string | number>())
 const files = ref<File[]>([])
 const acquisitionPrice = ref<string | number>('')
 const importing = ref(false)
+const deployOnImport = ref(true)
 const dragging = ref(false)
 const search = ref('')
 const statusFilter = ref('all')
@@ -47,11 +48,17 @@ const batchProgress = ref({ current: 0, total: 0 })
 const batchSyncing = ref(false)
 const batchDeleting = ref(false)
 const syncingId = ref<string | number | null>(null)
+const deployingId = ref<string | number | null>(null)
+const bindings = ref<Record<string, DeploymentBinding[]>>({})
+const gatewayTargets = ref<GatewayTarget[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
 const toast = useToast()
 
 const selectedItems = computed(() => subscriptions.value.filter((item) => selectedIds.value.has(item.id)))
 const allPageSelected = computed(() => subscriptions.value.length > 0 && subscriptions.value.every((item) => selectedIds.value.has(item.id)))
+function itemBindings(item: Subscription) { return bindings.value[String(item.id)] || [] }
+function activeBinding(item: Subscription) { return itemBindings(item).find((binding) => binding.observedState === 'active' && binding.mode === 'primary') || itemBindings(item).find((binding) => binding.observedState === 'active') }
+function targetName(targetId?: number) { return gatewayTargets.value.find((target) => target.id === targetId)?.name || (targetId ? `Target ${targetId}` : '未部署') }
 function categoryFromConnectivity(connectivity?: SubscriptionConnectivity | null) {
   const fiveHour = connectivity?.quota?.fiveHour?.remainingPercent
   const sevenDay = connectivity?.quota?.sevenDay?.remainingPercent
@@ -98,6 +105,15 @@ async function load() {
     totalPages.value = result.totalPages
     folders.value = result.folders || []
     insights.value = result.insights || { normal: 0, error: 0, priced: 0, totalCost: 0, averageCost: 0, expiringSoon: 0 }
+    const [targetResult, bindingResults] = await Promise.all([
+      api.getGatewayTargets().catch(() => ({ targets: [] as GatewayTarget[] })),
+      Promise.all(result.subscriptions.map(async (item) => {
+        const response = await api.getSubscriptionBindings(item.id).catch(() => ({ bindings: [] as DeploymentBinding[] }))
+        return [String(item.id), response.bindings] as const
+      })),
+    ])
+    gatewayTargets.value = targetResult.targets
+    bindings.value = Object.fromEntries(bindingResults)
     selectedIds.value = new Set()
     for (const item of subscriptions.value) {
       await testOne(item, true)
@@ -123,10 +139,12 @@ async function importFiles() {
     let imported = 0
     let failed = 0
     const failureDetails: string[] = []
+    const deploymentWarnings: string[] = []
     for (const file of queued) {
       try {
-        await api.importSubscriptions({ file, acquisitionPrice: queued.length === 1 ? normalizedPrice : undefined })
+        const result = await api.importSubscriptions({ file, acquisitionPrice: queued.length === 1 ? normalizedPrice : undefined, deploy: deployOnImport.value })
         imported += 1
+        if (typeof result.deploymentError === 'string') deploymentWarnings.push(`${file.name}：${result.deploymentError}`)
       } catch (err) {
         failed += 1
         failureDetails.push(`${file.name}：${getErrorMessage(err)}`)
@@ -134,6 +152,7 @@ async function importFiles() {
     }
     const message = `导入完成：成功 ${imported} · 失败 ${failed}`
     if (failed) toast.error(`${message}；${failureDetails.slice(0, 2).join('；')}`)
+    else if (deploymentWarnings.length) toast.show(`${message}；归档已保留，但号池部署需处理：${deploymentWarnings.slice(0, 2).join('；')}`, 'info')
     else toast.success(message)
     files.value = []
     acquisitionPrice.value = ''
@@ -206,6 +225,36 @@ async function syncToCpa(item: Subscription, quiet = false) {
   }
 }
 
+async function deployToPool(item: Subscription, quiet = false) {
+  deployingId.value = item.id
+  try {
+    const binding = await api.deploySubscription(item.id)
+    bindings.value[String(item.id)] = [...itemBindings(item).filter((candidate) => candidate.targetId !== binding.targetId), binding]
+    if (!quiet) toast.success(`已部署到 ${targetName(binding.targetId)}`)
+    return true
+  } catch (err) {
+    if (!quiet) toast.error(getErrorMessage(err))
+    return false
+  } finally {
+    deployingId.value = null
+  }
+}
+
+async function detachFromPool(item: Subscription) {
+  const binding = activeBinding(item)
+  if (!binding || !window.confirm(`确认从 ${targetName(binding.targetId)} 撤销该账号？托管账号会从远端池删除，归档仍保留。`)) return
+  deployingId.value = item.id
+  try {
+    const updated = await api.detachSubscription(item.id, binding.targetId)
+    bindings.value[String(item.id)] = [...itemBindings(item).filter((candidate) => candidate.targetId !== updated.targetId), updated]
+    toast.success('运行绑定已撤销，订阅归档保持不变')
+  } catch (err) {
+    toast.error(getErrorMessage(err))
+  } finally {
+    deployingId.value = null
+  }
+}
+
 function togglePageSelection(checked: boolean) {
   selectedIds.value = checked ? new Set(subscriptions.value.map((item) => item.id)) : new Set()
 }
@@ -223,17 +272,17 @@ async function syncSelected() {
   batchSyncing.value = true
   let synced = 0
   for (const item of items) {
-    if (await syncToCpa(item, true)) synced += 1
+    if (await deployToPool(item, true)) synced += 1
   }
   batchSyncing.value = false
-  toast.show(`批量同步完成：${synced}/${items.length}`, synced === items.length ? 'success' : 'info')
+  toast.show(`批量部署完成：${synced}/${items.length}`, synced === items.length ? 'success' : 'info')
   await load()
 }
 
 async function deleteSelected() {
   const items = [...selectedItems.value]
   if (!items.length) return
-  if (!window.confirm(`确认删除选中的 ${items.length} 个归档文件？此操作不会删除 CPA 运行池中的副本。`)) return
+  if (!window.confirm(`确认删除选中的 ${items.length} 个订阅？Orbit 托管的 Sub2API/CPA 运行副本会先安全撤销；外部接管账号不会被远端删除。`)) return
   batchDeleting.value = true
   let deleted = 0
   for (const item of items) {
@@ -295,11 +344,12 @@ onMounted(load)
           <span class="import-tool__copy"><strong>CDK 兑换入口</strong><small>打开兑换平台处理兑换码</small></span>
           <ExternalLink :size="15" aria-hidden="true" />
         </a>
+        <label class="import-deploy-option"><input v-model="deployOnImport" class="switch" type="checkbox" /><span><strong>导入后部署到主号池</strong><small>优先 Sub2API；失败时尝试 CPA 备份。归档始终保留。</small></span><Network :size="18" /></label>
       </div>
       <div v-if="files.length" class="file-queue">
         <div v-for="(file, index) in files" :key="`${file.name}-${file.lastModified}`" class="file-chip"><FileJson2 :size="15" /><span>{{ file.name }}</span><button type="button" :aria-label="`移除 ${file.name}`" @click="files.splice(index, 1)"><Trash2 :size="14" /></button></div>
       </div>
-      <div class="form-actions"><span class="muted">已选择 {{ files.length }} 个文件</span><button class="button button--primary" type="button" :disabled="!files.length || importing" @click="importFiles"><CloudUpload :size="17" />{{ importing ? '导入中…' : '开始导入' }}</button></div>
+      <div class="form-actions"><span class="muted">已选择 {{ files.length }} 个文件</span><button class="button button--primary" type="button" :disabled="!files.length || importing" @click="importFiles"><CloudUpload :size="17" />{{ importing ? '导入中…' : deployOnImport ? '导入并部署' : '仅归档导入' }}</button></div>
     </section>
 
     <section class="panel">
@@ -308,7 +358,7 @@ onMounted(load)
         <div class="batch-actions">
           <span class="selection-count">已选 {{ selectedIds.size }} 条</span>
           <button class="button button--secondary button--small" type="button" :disabled="batchTesting || !selectedItems.length" @click="testBatch"><Play :size="15" />{{ batchTesting ? `检测 ${batchProgress.current}/${batchProgress.total}` : '批量检测' }}</button>
-          <button class="button button--secondary button--small" type="button" :disabled="batchSyncing || !selectedItems.length" @click="syncSelected"><FolderSync :size="15" />{{ batchSyncing ? '同步中' : '批量同步' }}</button>
+          <button class="button button--secondary button--small" type="button" :disabled="batchSyncing || !selectedItems.length" @click="syncSelected"><Network :size="15" />{{ batchSyncing ? '部署中' : '部署主号池' }}</button>
           <button class="button button--danger button--small" type="button" :disabled="batchDeleting || !selectedItems.length" @click="deleteSelected"><Trash2 :size="15" />{{ batchDeleting ? '删除中' : '删除所选' }}</button>
         </div>
       </div>
@@ -330,12 +380,13 @@ onMounted(load)
       <template v-else-if="subscriptions.length">
         <div class="table-wrap subscription-list-wrap">
         <table class="data-table data-table--wide subscription-table">
-          <thead><tr><th class="selection-column"><input type="checkbox" :checked="allPageSelected" aria-label="全选本页" @change="togglePageSelection(($event.target as HTMLInputElement).checked)" /></th><th>邮箱</th><th>分类</th><th class="numeric">入手价</th><th class="numeric">延迟</th><th>5H 额度</th><th>7D 额度</th><th>订阅文件</th><th>操作</th></tr></thead>
+          <thead><tr><th class="selection-column"><input type="checkbox" :checked="allPageSelected" aria-label="全选本页" @change="togglePageSelection(($event.target as HTMLInputElement).checked)" /></th><th>邮箱</th><th>分类</th><th>运行池</th><th class="numeric">入手价</th><th class="numeric">延迟</th><th>5H 额度</th><th>7D 额度</th><th>订阅文件</th><th>操作</th></tr></thead>
           <tbody>
             <tr v-for="item in subscriptions" :key="item.id" :class="{ 'row--selected': selectedIds.has(item.id) }">
               <td class="selection-column"><input type="checkbox" :checked="selectedIds.has(item.id)" :aria-label="`选择 ${item.email || subscriptionFile(item)}`" @change="toggleSelection(item.id, ($event.target as HTMLInputElement).checked)" /></td>
               <td class="strong subscription-email" data-label="邮箱" :title="item.email || ''">{{ item.email || '—' }}</td>
               <td data-label="分类"><StatusBadge :tone="connectivityState(item).tone" :label="connectivityState(item).label" /></td>
+              <td data-label="运行池"><span class="pool-binding" :class="{ 'is-active': activeBinding(item) }"><Network :size="13" />{{ targetName(activeBinding(item)?.targetId) }}</span></td>
               <td class="numeric nowrap" data-label="入手价">{{ subscriptionAcquisitionPrice(item) == null ? '—' : formatCurrency(subscriptionAcquisitionPrice(item)) }}</td>
               <td class="numeric nowrap" data-label="延迟">{{ item.connectivity?.latencyMs == null || !item.connectivity?.httpStatus ? '—' : `${item.connectivity.latencyMs} ms` }}</td>
               <td data-label="5H 额度"><QuotaCell label="5 小时" :window="item.connectivity?.quota?.fiveHour" /></td>
@@ -366,6 +417,8 @@ onMounted(load)
           <div><dt>最后检查</dt><dd>{{ formatDateTime(subscriptionCheckedAt(selected)) }}</dd></div>
           <div><dt>调用延迟</dt><dd>{{ selected.connectivity?.latencyMs == null || !selected.connectivity?.httpStatus ? '—' : `${selected.connectivity.latencyMs} ms` }}</dd></div>
           <div><dt>CPA 状态</dt><dd>{{ selected.connectivity?.cpaStatusMessage || selected.connectivity?.cpaStatus || '—' }}</dd></div>
+          <div><dt>主运行池</dt><dd>{{ targetName(activeBinding(selected)?.targetId) }}</dd></div>
+          <div><dt>绑定归属</dt><dd>{{ activeBinding(selected)?.ownership === 'adopted' ? '外部接管（仅解绑）' : activeBinding(selected) ? 'Orbit 托管' : '未绑定' }}</dd></div>
           <div><dt>5H 剩余额度</dt><dd><QuotaCell label="5 小时" :window="selected.connectivity?.quota?.fiveHour" /></dd></div>
           <div><dt>7D 剩余额度</dt><dd><QuotaCell label="7 天" :window="selected.connectivity?.quota?.sevenDay" /></dd></div>
           <div><dt>下次可重试</dt><dd>{{ formatDateTime(selected.connectivity?.nextRetryAt) }}</dd></div>
@@ -378,7 +431,9 @@ onMounted(load)
       </template>
       <template v-if="selected" #footer>
         <button class="button button--secondary" type="button" :disabled="testingIds.has(selected.id)" @click="testOne(selected)"><TestTube2 :size="17" />检测状态与额度</button>
-        <button class="button button--primary" type="button" :disabled="syncingId === selected.id" @click="syncToCpa(selected)"><FolderSync :size="17" />{{ syncingId === selected.id ? '同步中…' : '同步到 CPA' }}</button>
+        <button v-if="activeBinding(selected)" class="button button--danger" type="button" :disabled="deployingId === selected.id" @click="detachFromPool(selected)"><Unplug :size="17" />撤销运行绑定</button>
+        <button v-else class="button button--primary" type="button" :disabled="deployingId === selected.id" @click="deployToPool(selected)"><Network :size="17" />{{ deployingId === selected.id ? '部署中…' : '部署到主号池' }}</button>
+        <button class="button button--secondary" type="button" :disabled="syncingId === selected.id" @click="syncToCpa(selected)"><FolderSync :size="17" />{{ syncingId === selected.id ? '同步中…' : '手动同步 CPA' }}</button>
       </template>
     </BaseDrawer>
   </div>

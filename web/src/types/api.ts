@@ -247,6 +247,107 @@ export interface SubscriptionQuery {
 export interface ImportSubscriptionsOptions {
   file: File
   acquisitionPrice?: string
+  deploy?: boolean
+}
+
+export interface GatewayTarget {
+  id: number
+  kind: 'sub2api' | 'cpa'
+  name: string
+  baseUrl: string
+  adminKey?: string
+  adminKeyConfigured?: boolean
+  enabled: boolean
+  primary: boolean
+  allowRemote: boolean
+  defaultGroupIds?: number[]
+  defaultConcurrency: number
+  defaultPriority: number
+  rateMultiplier: number
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface GatewayHealth {
+  status: 'ok' | 'unavailable' | 'disabled' | string
+  latencyMs?: number
+  checkedAt?: string
+  message?: string
+}
+
+export interface GatewayTargetStatus {
+  target: GatewayTarget
+  health: GatewayHealth
+}
+
+export interface DeploymentBinding {
+  id: number
+  subscriptionId: string
+  targetId: number
+  remoteAccountId?: string
+  mode: 'primary' | 'fallback' | string
+  ownership: 'managed' | 'adopted' | string
+  desiredState: string
+  observedState: string
+  lastError?: string
+  lastSyncedAt?: string
+}
+
+export interface SyncOperation {
+  id: number
+  subscriptionId: string
+  targetId: number
+  kind: string
+  status: string
+  attempt: number
+  lastError?: string
+  createdAt: string
+  completedAt?: string
+}
+
+export interface GatewaySnapshot {
+  targetId: number
+  data: Record<string, unknown>
+  stale: boolean
+  lastError?: string
+  lastAttemptAt: string
+  lastSuccessAt?: string
+}
+
+export interface GatewayOverview {
+  targets: GatewayTargetStatus[]
+  bindings: DeploymentBinding[]
+  operations: SyncOperation[]
+  snapshots: GatewaySnapshot[]
+  checkedAt: string
+}
+
+export interface UsageBucket {
+  id: number
+  targetId: number
+  bucketAt: string
+  bucketMinutes: number
+  accountId?: string
+  groupName?: string
+  model?: string
+  requests: number
+  successes: number
+  failures: number
+  inputTokens: number
+  outputTokens: number
+  cacheCreationTokens: number
+  cacheReadTokens: number
+  cost: number
+  actualCost: number
+  averageDurationMs: number
+  firstTokenMs: number
+}
+
+export interface GatewayUsageResponse {
+  buckets: UsageBucket[]
+  snapshots: GatewaySnapshot[]
+  from: string
+  to: string
 }
 
 export interface ApiMessage {

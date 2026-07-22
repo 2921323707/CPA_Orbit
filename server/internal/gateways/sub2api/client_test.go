@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"cpa-monitor/server/internal/gateways"
 )
@@ -33,7 +34,7 @@ func TestDeployImportsCodexSessionWithAdminKey(t *testing.T) {
 			t.Fatalf("unexpected import request: %+v", request)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"total":1,"created":1,"updated":0,"skipped":0,"failed":0,"items":[{"index":0,"action":"created","account_id":42}]}`)
+		fmt.Fprint(w, `{"code":0,"message":"success","data":{"total":1,"created":1,"updated":0,"skipped":0,"failed":0,"items":[{"index":0,"action":"created","account_id":42}]}}`)
 	}))
 	defer server.Close()
 
@@ -44,6 +45,29 @@ func TestDeployImportsCodexSessionWithAdminKey(t *testing.T) {
 	}
 	if result.Binding.ExternalID != "42" || !result.Binding.Managed || result.Status != "deployed" {
 		t.Fatalf("unexpected deployment: %+v", result)
+	}
+}
+
+func TestUsageRangeUsesSub2APIDateFormatAndUnwrapsPagination(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("start_date"); got != "2026-07-21" {
+			t.Fatalf("start_date=%q", got)
+		}
+		if got := r.URL.Query().Get("end_date"); got != "2026-07-22" {
+			t.Fatalf("end_date=%q", got)
+		}
+		fmt.Fprint(w, `{"code":0,"message":"success","data":{"items":[{"account_id":42}],"total":1,"page":1,"page_size":100,"pages":1}}`)
+	}))
+	defer server.Close()
+	client := NewClient(func() Config { return Config{BaseURL: server.URL, AdminKey: "key"} })
+	from, _ := time.Parse(time.RFC3339, "2026-07-21T23:15:00Z")
+	to, _ := time.Parse(time.RFC3339, "2026-07-22T01:00:00Z")
+	result, err := client.UsageRange(context.Background(), 1, 100, from, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Total != 1 || result.Pages != 1 || len(result.Items) != 1 {
+		t.Fatalf("unexpected usage page: %+v", result)
 	}
 }
 

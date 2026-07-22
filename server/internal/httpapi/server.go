@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -178,6 +179,17 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.handleGatewayOverview(w, r)
+	case path == "/api/gateways/collect":
+		if !requireMethod(w, r, http.MethodPost) {
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+		defer cancel()
+		if err := s.collector.Collect(ctx); err != nil {
+			writeError(w, http.StatusBadGateway, "collection_failed", "some Sub2API telemetry could not be refreshed; the last valid snapshot was kept")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"collected": true, "at": time.Now()})
 	case path == "/api/gateways/usage":
 		if !requireMethod(w, r, http.MethodGet) {
 			return
@@ -600,6 +612,10 @@ func (s *Server) handleSubscriptionAction(w http.ResponseWriter, r *http.Request
 		if !requireMethod(w, r, http.MethodDelete) {
 			return
 		}
+		if err := s.deployments.DetachAll(r.Context(), id); err != nil {
+			writeError(w, http.StatusBadGateway, "detach_failed", "runtime bindings could not be removed; the subscription archive was kept")
+			return
+		}
 		if err := s.subs.Delete(id); errors.Is(err, os.ErrNotExist) {
 			writeError(w, http.StatusNotFound, "not_found", "subscription not found")
 			return
@@ -631,7 +647,12 @@ func (s *Server) handleSubscriptionAction(w http.ResponseWriter, r *http.Request
 	}
 	switch parts[1] {
 	case "test":
-		result, err := s.subs.Test(r.Context(), id)
+		result, err := s.deployments.Inspect(r.Context(), id)
+		if errors.Is(err, sql.ErrNoRows) {
+			result, err = s.subs.Test(r.Context(), id)
+		} else if err == nil {
+			s.subs.SaveConnectivity(id, result)
+		}
 		if errors.Is(err, os.ErrNotExist) {
 			writeError(w, http.StatusNotFound, "not_found", "subscription not found")
 			return

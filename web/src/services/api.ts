@@ -9,6 +9,11 @@ import type {
   LubanService,
   LubanSmsStatus,
   ImportSubscriptionsOptions,
+  DeploymentBinding,
+  GatewayHealth,
+  GatewayOverview,
+  GatewayTarget,
+  GatewayUsageResponse,
   Offer,
   Settings,
   SubscriptionConnectivity,
@@ -117,6 +122,7 @@ export const api = {
     // send the optional non-sensitive price as a query parameter instead.
     const params = new URLSearchParams()
     if (options.acquisitionPrice) params.set('acquisitionPrice', options.acquisitionPrice)
+    if (options.deploy) params.set('deploy', 'true')
     const suffix = params.size ? `?${params.toString()}` : ''
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), 20_000)
@@ -138,6 +144,16 @@ export const api = {
   testSubscription: (id: string | number) => request<SubscriptionConnectivity>(`/subscriptions/${encodeURIComponent(id)}/test`, { method: 'POST' }),
   syncSubscription: (id: string | number) => request<ApiMessage>(`/subscriptions/${encodeURIComponent(id)}/sync`, { method: 'POST' }),
   deleteSubscription: (id: string | number) => request<ApiMessage>(`/subscriptions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  getGatewayOverview: () => request<GatewayOverview>('/gateways/overview'),
+	collectGatewayTelemetry: () => request<ApiMessage>('/gateways/collect', { method: 'POST' }),
+  getGatewayTargets: () => request<{ targets: GatewayTarget[] }>('/gateways/targets'),
+  saveGatewayTarget: (target: Partial<GatewayTarget> & Pick<GatewayTarget, 'kind' | 'name' | 'baseUrl'>) => request<GatewayTarget>('/gateways/targets', { method: 'POST', body: JSON.stringify(target) }),
+  testGatewayTarget: (id: number) => request<GatewayHealth>(`/gateways/targets/${id}/test`, { method: 'POST' }),
+  getGatewayUsage: (targetId: number, days = 7) => request<GatewayUsageResponse>(`/gateways/usage?targetId=${targetId}&days=${days}`),
+  getSubscriptionBindings: (id: string | number) => request<{ bindings: DeploymentBinding[] }>(`/subscriptions/${encodeURIComponent(id)}/bindings`),
+  deploySubscription: (id: string | number, targetId?: number) => request<DeploymentBinding>(`/subscriptions/${encodeURIComponent(id)}/deploy`, { method: 'POST', body: JSON.stringify(targetId ? { targetId } : {}) }),
+  detachSubscription: (id: string | number, targetId: number) => request<DeploymentBinding>(`/subscriptions/${encodeURIComponent(id)}/detach`, { method: 'POST', body: JSON.stringify({ targetId }) }),
+  migrateSubscription: (id: string | number, fromTargetId: number, toTargetId: number) => request<DeploymentBinding>(`/subscriptions/${encodeURIComponent(id)}/migrate`, { method: 'POST', body: JSON.stringify({ fromTargetId, toTargetId }) }),
   getSettings: () => request<Settings>('/settings'),
   updateSettings: (settings: Settings) => request<Settings | ApiMessage>('/settings', { method: 'PUT', body: JSON.stringify(settings) }),
   testWebhook: (webhookUrl?: string) => request<ApiMessage>('/settings/test-webhook', {

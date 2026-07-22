@@ -7,6 +7,7 @@ const router = createRouter({
     { path: '/', name: 'dashboard', component: () => import('../views/DashboardView.vue'), meta: { titleKey: 'nav.dashboard' } },
     { path: '/offers', name: 'offers', component: () => import('../views/OffersView.vue'), meta: { titleKey: 'nav.offers' } },
     { path: '/subscriptions', name: 'subscriptions', component: () => import('../views/SubscriptionsView.vue'), meta: { titleKey: 'nav.subscriptions' } },
+    { path: '/operations', name: 'operations', component: () => import('../views/OperationsView.vue'), meta: { titleKey: 'nav.operations' } },
     { path: '/alerts', redirect: { path: '/settings', query: { section: 'alerts' } } },
     { path: '/gpt-plus', redirect: '/toolbox' },
     { path: '/toolbox', name: 'toolbox', component: () => import('../views/ToolboxView.vue'), meta: { titleKey: 'nav.toolbox' } },
