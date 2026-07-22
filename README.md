@@ -1,7 +1,7 @@
 <div align="center">
   <img src="app/build/appicon.png" width="112" alt="CPA Orbit logo" />
   <h1>CPA Orbit</h1>
-  <p><strong>A local-first operations console for AI subscriptions, price intelligence, quota health, and CPA proxy runtime.</strong></p>
+  <p><strong>A local-first control plane for AI subscriptions, Sub2API pools, Token telemetry, price intelligence, and CPA fallback.</strong></p>
 
   <p>
     <a href="http://165.154.205.54/cpa_orbit/">
@@ -15,7 +15,7 @@
 
   <p>
     <a href="https://github.com/2921323707/CPA_Orbit/actions"><img src="https://img.shields.io/badge/CI-configured-2088FF?style=flat-square&amp;logo=githubactions&amp;logoColor=white" alt="CI configured" /></a>
-    <a href="https://github.com/2921323707/CPA_Orbit/releases"><img src="https://img.shields.io/badge/version-v1.2.0-2563EB?style=flat-square" alt="Version 1.2.0" /></a>
+		<a href="https://github.com/2921323707/CPA_Orbit/releases"><img src="https://img.shields.io/badge/version-v1.3.0-2563EB?style=flat-square" alt="Version 1.3.0" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22C55E?style=flat-square" alt="MIT License" /></a>
     <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?style=flat-square&amp;logo=go&amp;logoColor=white" alt="Go 1.25 or newer" /></a>
     <a href="https://vuejs.org/"><img src="https://img.shields.io/badge/Vue-3.5-42B883?style=flat-square&amp;logo=vuedotjs&amp;logoColor=white" alt="Vue 3.5" /></a>
@@ -36,6 +36,8 @@
 CPA Orbit brings the operational paths that normally live across scripts, browser tabs, and local folders into one coherent workspace. The desktop application and browser console share the same Go runtime, settings, credentials, subscription archive, alerts, and price history. Everything stays local by default and the network services bind to loopback interfaces.
 
 - **Subscription operations** — single or batch JSON import, canonical-content deduplication, archive management, CPA synchronization, quota checks, and connectivity diagnostics.
+- **Sub2API pools** — GPT Plus/Codex session deployment, one-primary ownership, CPA fallback, resumable migration, write-only admin keys, and safe managed deletion.
+- **Token telemetry** — Sub2API snapshots plus normalized 15-minute request, Token, latency, and cost aggregates retained locally for up to 90 days.
 - **Price intelligence** — K12 and GPT Plus offer collection, current inventory, threshold alerts, and truthful 14-day average-price history.
 - **CPA runtime control** — automatic CLIProxyAPI discovery and startup, live health state, auth-pool projection, and shared endpoint visibility.
 - **Desktop integration** — compact Wails host, system tray, close-to-tray behavior, native notifications, taskbar alerts, and startup-at-login.
@@ -64,26 +66,33 @@ flowchart LR
   subgraph CORE["Local Control Plane · 127.0.0.1:8080"]
     API["Monitor API<br/>Go · net/http"]
     MON["Price & Alert Monitor"]
-    SUB["Subscription Manager"]
+		SUB["Subscription Assets"]
+		ROUTE["Gateway Coordinator"]
+		OBS["Usage Collector"]
     SMS["Luban SMS Proxy"]
   end
 
   subgraph STATE["Local Source of Truth"]
     DATA[("data/<br/>settings · history · alerts")]
-    ARCH[("k12/<br/>subscription archive")]
+		ARCH[("k12/<br/>subscription archive")]
+		DB[("control-plane.db<br/>targets · bindings · usage")]
   end
 
-  subgraph RUNTIME["Rebuildable Runtime Projection"]
+	 subgraph RUNTIME["Runtime Gateways"]
+    SUB2["Sub2API<br/>primary pool"]
     CPA["CLIProxyAPI<br/>127.0.0.1:8317"]
     AUTH[("cpa/auths/")]
   end
 
   WEB -->|"HTTP /api"| API
   APP -->|"same-origin /api"| API
-  API --> MON & SUB & SMS
+	API --> MON & SUB & ROUTE & SMS
   MON <--> DATA
   SUB <--> ARCH
-  SUB -->|"reconcile"| AUTH
+	ROUTE <--> DB
+	ROUTE -->|"admin API"| SUB2
+	ROUTE -->|"managed projection"| AUTH
+	OBS --> SUB2 & DB
   AUTH --> CPA
   API -->|"health & quota"| CPA
 
@@ -92,15 +101,18 @@ flowchart LR
   classDef store fill:#fff8e8,stroke:#d59b2d,color:#4c3510,stroke-width:2px;
   classDef runtime fill:#eef2ff,stroke:#5c6ac4,color:#222a57,stroke-width:2px;
   class WEB,APP client;
-  class API,MON,SUB,SMS service;
-  class DATA,ARCH store;
-  class CPA,AUTH runtime;
+	class API,MON,SUB,ROUTE,OBS,SMS service;
+	class DATA,ARCH,DB store;
+	class SUB2,CPA,AUTH runtime;
 ```
 
-The archive under `k12/` is the subscription source of truth. `cpa/auths/` is a rebuildable runtime projection, so the web and desktop clients never maintain competing account stores. See the [architecture dossier](docs/architecture/README.md) for trust boundaries, import sequence, failure modes, and ADRs.
+The archive under `k12/` is the durable subscription asset source. Sub2API remains authoritative for refreshed runtime credentials and raw request logs; CPA is a lightweight managed fallback projection. SQLite records ownership and desired/observed bindings without becoming another credential store. See the [architecture dossier](docs/architecture/README.md) and [Sub2API pool guide](docs/guide/sub2api-pool.md).
 
 ## Recent updates
 
+- Added Sub2API as the preferred primary pool, with official Codex-session import, CPA deployment fallback, managed/adopted ownership, migration rollback, and one-active-primary protection.
+- Added a pool operations console with gateway health, recent deployment operations, Sub2API snapshots, seven-day Token charts, manual refresh, and 90-day local aggregates.
+- Import can now archive and deploy GPT Plus/Codex JSON in one action; runtime failure never discards the local archive.
 - Unified K12 and unverified GPT Plus offers in a compact Price workspace with five-row pagination and direct checkout links.
 - Added deletable price-history samples with immediate chart re-rendering, single-source trend views, and corrected K12 collection filters.
 - Replaced the legacy GPT Plus screen with a Toolbox for subscription JSON conversion and Luban SMS operations.
@@ -125,6 +137,7 @@ See the complete [changelog](docs/releases/CHANGELOG.md).
 - Node.js 20 or newer with npm
 - Windows 10/11 with WebView2 for the desktop executable
 - A local CLIProxyAPI runtime only when CPA proxy features are required
+- A Sub2API deployment and administrator API key when primary-pool features are required
 
 ### Development workspace
 
@@ -139,6 +152,7 @@ cd CPA_Orbit
 | Web console | `http://127.0.0.1:5173/` |
 | Monitor API | `http://127.0.0.1:8080/api` |
 | CLIProxyAPI | `http://127.0.0.1:8317/v1` |
+| Sub2API | User configured; a loopback deployment is recommended |
 | In-app guide | `http://127.0.0.1:5173/docs` |
 
 ### Windows desktop build
@@ -187,7 +201,7 @@ Browse the complete, searchable documentation at **[165.154.205.54/cpa_orbit](ht
 
 ## Security
 
-CPA Orbit is local-first, not credential-free. Never commit or share CPA JSON, OAuth tokens, API keys, `data/`, `k12/`, `cpa/auths/`, logs, or screenshots containing account information. Review the [security policy](docs/SECURITY.md) before exposing an endpoint or redistributing a build.
+CPA Orbit is local-first, not credential-free. Never commit or share CPA/Sub2API JSON, OAuth tokens, administrator keys, `data/`, `k12/`, `cpa/auths/`, logs, or screenshots containing account information. Remote gateway targets require HTTPS, but loopback deployment is still preferred. Review the [security policy](docs/SECURITY.md) before exposing an endpoint or redistributing a build.
 
 ## Data sources and acknowledgements
 

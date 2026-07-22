@@ -2,7 +2,7 @@
 
 ## Supported version
 
-Security fixes target the latest release, currently **v1.2.0**, and the current `main` branch.
+Security fixes target the latest release, currently **v1.3.0**, and the current `main` branch.
 
 ## Private reporting
 
@@ -19,7 +19,8 @@ Do not include real tokens, subscription archives, account identifiers, or third
 ## Secret-handling rules
 
 - Never commit `k12/**/*.json`, `cpa/auths/**`, `data/*.json`, local configuration, logs, or `.env*` files.
-- The browser must never receive stored CPA management keys, Luban API keys, access tokens, refresh tokens, or ID tokens.
+- The browser must never receive stored Sub2API/CPA management keys, Luban API keys, access tokens, refresh tokens, or ID tokens.
+- Remote gateway management targets require explicit opt-in and HTTPS; loopback targets remain preferred.
 - External URLs must be validated, redirects restricted, response sizes bounded, and errors sanitized.
 - Imported filenames and archive paths must remain inside the intended project directories.
 - Public screenshots and test fixtures must contain synthetic or fully redacted data.

@@ -98,6 +98,22 @@ func TestDeployDefaultFallsBackToCPA(t *testing.T) {
 	}
 }
 
+func TestDeployRequiresMigrationWhenAnotherGatewayIsActive(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	primary, _ := store.UpsertGatewayTarget(ctx, controlplane.GatewayTarget{Kind: "sub2api", Name: "primary", BaseURL: "http://127.0.0.1:8080", Enabled: true, Primary: true})
+	fallback, _ := store.UpsertGatewayTarget(ctx, controlplane.GatewayTarget{Kind: "cpa", Name: "fallback", BaseURL: "http://127.0.0.1:8317/v1", Enabled: true})
+	_, _ = store.UpsertDeploymentBinding(ctx, controlplane.DeploymentBinding{SubscriptionID: "sub-1", TargetID: fallback.ID, RemoteAccountID: "owned.json", Ownership: "managed", DesiredState: "active", ObservedState: "active", Mode: "fallback"})
+	adapter := &fakeAdapter{kind: gateways.KindSub2API, deployID: "42"}
+	coordinator := NewCoordinator(store, fakeSource{credential: gateways.Credential{Data: []byte(`{}`)}}, func(controlplane.GatewayTarget, string) (gateways.Adapter, error) { return adapter, nil })
+	if _, err := coordinator.Deploy(ctx, "sub-1", primary.ID); !errors.Is(err, ErrActiveBindingExists) {
+		t.Fatalf("expected migration guard, got %v", err)
+	}
+	if adapter.deploys != 0 {
+		t.Fatal("destination was deployed before source detachment")
+	}
+}
+
 func TestDetachDoesNotDeleteAdoptedRemoteAccount(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
@@ -118,9 +134,11 @@ func TestDetachAllCleansManagedAndOnlyUnbindsAdoptedAccounts(t *testing.T) {
 	ctx := context.Background()
 	primary, _ := store.UpsertGatewayTarget(ctx, controlplane.GatewayTarget{Kind: "sub2api", Name: "primary", BaseURL: "http://127.0.0.1:8080", Enabled: true, Primary: true})
 	fallback, _ := store.UpsertGatewayTarget(ctx, controlplane.GatewayTarget{Kind: "cpa", Name: "fallback", BaseURL: "http://127.0.0.1:8317/v1", Enabled: true})
+	failed, _ := store.UpsertGatewayTarget(ctx, controlplane.GatewayTarget{Kind: "sub2api", Name: "failed", BaseURL: "http://127.0.0.1:8081", Enabled: true})
 	_, _ = store.UpsertDeploymentBinding(ctx, controlplane.DeploymentBinding{SubscriptionID: "sub-1", TargetID: primary.ID, RemoteAccountID: "42", Ownership: "managed", DesiredState: "active", ObservedState: "active"})
 	_, _ = store.UpsertDeploymentBinding(ctx, controlplane.DeploymentBinding{SubscriptionID: "sub-1", TargetID: fallback.ID, RemoteAccountID: "adopted.json", Ownership: "adopted", DesiredState: "active", ObservedState: "active"})
-	adapters := map[int64]*fakeAdapter{primary.ID: {kind: gateways.KindSub2API}, fallback.ID: {kind: gateways.KindCPA}}
+	_, _ = store.UpsertDeploymentBinding(ctx, controlplane.DeploymentBinding{SubscriptionID: "sub-1", TargetID: failed.ID, Ownership: "managed", DesiredState: "active", ObservedState: "error", LastError: "import failed"})
+	adapters := map[int64]*fakeAdapter{primary.ID: {kind: gateways.KindSub2API}, fallback.ID: {kind: gateways.KindCPA}, failed.ID: {kind: gateways.KindSub2API}}
 	coordinator := NewCoordinator(store, fakeSource{credential: gateways.Credential{Data: []byte(`{}`)}}, func(target controlplane.GatewayTarget, _ string) (gateways.Adapter, error) {
 		return adapters[target.ID], nil
 	})
@@ -132,6 +150,9 @@ func TestDetachAllCleansManagedAndOnlyUnbindsAdoptedAccounts(t *testing.T) {
 	}
 	if adapters[fallback.ID].detaches != 1 || adapters[fallback.ID].lastDetach.Managed {
 		t.Fatalf("adopted binding was treated as owned: %+v", adapters[fallback.ID])
+	}
+	if adapters[failed.ID].detaches != 0 {
+		t.Fatal("failed deployment without a remote ID attempted a remote delete")
 	}
 	bindings, _ := store.ListDeploymentBindings(ctx, "sub-1")
 	for _, binding := range bindings {

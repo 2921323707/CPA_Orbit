@@ -4,6 +4,21 @@ All notable CPA Orbit changes are documented here. Versions follow Semantic Vers
 
 ## [Unreleased]
 
+### Added
+
+- Added Sub2API gateway targets, official Codex-session import, managed/adopted deployment bindings, CPA fallback, migration rollback, and one-active-primary enforcement.
+- Added a pool operations console with gateway health, binding and operation state, manual telemetry refresh, and seven-day Token visualization.
+- Added SQLite-backed 15-minute request, Token, latency, and cost aggregates with 90-day retention and stale-last-valid snapshots.
+
+### Changed
+
+- Subscription import can now archive and deploy GPT Plus/Codex JSON in one action. A deployment failure keeps the archive and reports a separate runtime warning.
+- Subscription health checks use their active Sub2API/CPA binding; deletion first removes managed runtime accounts and never deletes adopted remote accounts.
+
+### Security
+
+- Sub2API administrator keys are write-only, remote management targets require explicit opt-in plus HTTPS, redirects are refused, and errors do not expose credentials.
+
 ## [1.2.1] - 2026-07-20
 
 ### Added

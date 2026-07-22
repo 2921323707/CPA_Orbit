@@ -6,6 +6,7 @@ const englishSidebar = [
     items: [
       { text: 'Introduction', link: '/' },
       { text: 'Quick start', link: '/guide/getting-started' },
+			{ text: 'Sub2API pools', link: '/guide/sub2api-pool' },
       { text: 'Deployment', link: '/deploy' },
     ],
   },
@@ -43,6 +44,7 @@ const chineseSidebar = [
     items: [
       { text: '项目简介', link: '/zh/' },
       { text: '快速开始', link: '/zh/guide/getting-started' },
+			{ text: 'Sub2API 号池', link: '/zh/guide/sub2api-pool' },
       { text: '部署上线', link: '/zh/deploy' },
     ],
   },
@@ -92,7 +94,7 @@ export default defineConfig({
       label: 'English',
       lang: 'en-US',
       title: 'CPA Orbit',
-      description: 'Local-first operations for AI subscriptions, price intelligence, quota health, and CPA runtime.',
+		description: 'Local-first control plane for AI subscriptions, Sub2API pools, Token telemetry, and CPA fallback.',
       themeConfig: {
         nav: [
           { text: 'Guide', link: '/guide/getting-started' },
@@ -100,7 +102,7 @@ export default defineConfig({
           { text: 'Roadmap', link: '/roadmap' },
           { text: 'Contribute', link: '/contribute' },
           {
-            text: 'v1.1.0',
+			text: 'v1.3.0',
             items: [
               { text: 'Deploy docs', link: '/deploy' },
               { text: 'Changelog', link: '/releases/CHANGELOG' },
@@ -128,7 +130,7 @@ export default defineConfig({
       lang: 'zh-CN',
       link: '/zh/',
       title: 'CPA Orbit',
-      description: '本地优先的 AI 订阅、价格情报、额度健康与 CPA 运行控制台。',
+		description: '本地优先的 AI 订阅、Sub2API 号池、Token 可视化与 CPA 兜底控制台。',
       themeConfig: {
         nav: [
           { text: '指南', link: '/zh/guide/getting-started' },
@@ -136,7 +138,7 @@ export default defineConfig({
           { text: '扩展', link: '/zh/roadmap' },
           { text: '参与', link: '/zh/contribute' },
           {
-            text: 'v1.1.0',
+			text: 'v1.3.0',
             items: [
               { text: '部署文档站', link: '/zh/deploy' },
               { text: '更新日志', link: '/zh/releases/CHANGELOG' },

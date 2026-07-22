@@ -56,6 +56,7 @@ const toast = useToast()
 
 const selectedItems = computed(() => subscriptions.value.filter((item) => selectedIds.value.has(item.id)))
 const allPageSelected = computed(() => subscriptions.value.length > 0 && subscriptions.value.every((item) => selectedIds.value.has(item.id)))
+const primaryTarget = computed(() => gatewayTargets.value.find((target) => target.enabled && target.primary))
 function itemBindings(item: Subscription) { return bindings.value[String(item.id)] || [] }
 function activeBinding(item: Subscription) { return itemBindings(item).find((binding) => binding.observedState === 'active' && binding.mode === 'primary') || itemBindings(item).find((binding) => binding.observedState === 'active') }
 function targetName(targetId?: number) { return gatewayTargets.value.find((target) => target.id === targetId)?.name || (targetId ? `Target ${targetId}` : '未部署') }
@@ -255,6 +256,23 @@ async function detachFromPool(item: Subscription) {
   }
 }
 
+async function migrateToPrimary(item: Subscription) {
+	const binding = activeBinding(item)
+	const target = primaryTarget.value
+	if (!binding || !target || binding.targetId === target.id) return
+	if (!window.confirm(`确认将该账号从 ${targetName(binding.targetId)} 迁移到 ${target.name}？失败时系统会尝试恢复原绑定。`)) return
+	deployingId.value = item.id
+	try {
+		const updated = await api.migrateSubscription(item.id, binding.targetId, target.id)
+		bindings.value[String(item.id)] = [...itemBindings(item).filter((candidate) => candidate.targetId !== binding.targetId && candidate.targetId !== updated.targetId), { ...binding, desiredState: 'detached', observedState: 'detached' }, updated]
+		toast.success(`已切回 ${target.name}`)
+	} catch (err) {
+		toast.error(getErrorMessage(err))
+	} finally {
+		deployingId.value = null
+	}
+}
+
 function togglePageSelection(checked: boolean) {
   selectedIds.value = checked ? new Set(subscriptions.value.map((item) => item.id)) : new Set()
 }
@@ -431,6 +449,7 @@ onMounted(load)
       </template>
       <template v-if="selected" #footer>
         <button class="button button--secondary" type="button" :disabled="testingIds.has(selected.id)" @click="testOne(selected)"><TestTube2 :size="17" />检测状态与额度</button>
+		<button v-if="activeBinding(selected)?.mode === 'fallback' && primaryTarget && activeBinding(selected)?.targetId !== primaryTarget.id" class="button button--primary" type="button" :disabled="deployingId === selected.id" @click="migrateToPrimary(selected)"><Network :size="17" />切回主号池</button>
         <button v-if="activeBinding(selected)" class="button button--danger" type="button" :disabled="deployingId === selected.id" @click="detachFromPool(selected)"><Unplug :size="17" />撤销运行绑定</button>
         <button v-else class="button button--primary" type="button" :disabled="deployingId === selected.id" @click="deployToPool(selected)"><Network :size="17" />{{ deployingId === selected.id ? '部署中…' : '部署到主号池' }}</button>
         <button class="button button--secondary" type="button" :disabled="syncingId === selected.id" @click="syncToCpa(selected)"><FolderSync :size="17" />{{ syncingId === selected.id ? '同步中…' : '手动同步 CPA' }}</button>

@@ -62,6 +62,22 @@ func TestStorePersistsTargetsBindingsOperationsAndUsage(t *testing.T) {
 	if err != nil || len(bindings) != 1 || bindings[0].RemoteAccountID != "42" {
 		t.Fatalf("binding round trip failed: bindings=%+v err=%v", bindings, err)
 	}
+	target.Primary = true
+	if _, err := store.UpsertGatewayTarget(ctx, target); err != nil {
+		t.Fatal(err)
+	}
+	bindings, _ = store.ListDeploymentBindings(ctx, "subscription-1")
+	if bindings[0].Mode != "primary" {
+		t.Fatalf("binding was not promoted with its target: %+v", bindings[0])
+	}
+	fallback.Primary = true
+	if _, err := store.UpsertGatewayTarget(ctx, fallback); err != nil {
+		t.Fatal(err)
+	}
+	bindings, _ = store.ListDeploymentBindings(ctx, "subscription-1")
+	if bindings[0].Mode != "fallback" {
+		t.Fatalf("binding was not demoted with its target: %+v", bindings[0])
+	}
 
 	operation, err := store.CreateSyncOperation(ctx, SyncOperation{
 		SubscriptionID: "subscription-1", TargetID: target.ID, Kind: "deploy", Status: "pending",

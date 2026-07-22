@@ -14,6 +14,7 @@ CPA Orbit is a local-first modular monolith. Modules share one Go control plane 
 | Overview | Operational summary | Read-only aggregation |
 | Price intelligence | K12 / GPT Plus snapshots and trends | `data/offers.json`, `data/price_history.json` |
 | Subscription assets | Archive, deduplicate, project, and check accounts | `k12/` source, `cpa/auths/` projection |
+| Pool operations | Gateway targets, managed bindings, migrations, and Token telemetry | `data/control-plane.db`; Sub2API owns raw request logs |
 | Alerts | Threshold history and webhook delivery | `data/alerts.json` |
 | Settings | Endpoints, schedules, thresholds, backend keys | `data/settings.json` |
 | Desktop host | Startup, tray, notifications, native integration | Reuses the same runtime |
@@ -34,6 +35,10 @@ Monitor API and CLIProxyAPI have independent health signals. The default endpoin
 Monitor API  http://127.0.0.1:8080/api
 CLIProxyAPI  http://127.0.0.1:8317/v1
 ```
+
+## Sub2API control plane
+
+Sub2API is the preferred primary subscription pool; CPA remains a lightweight fallback. Orbit stores durable target and binding state, imports Codex sessions through the official Sub2API administrator API, and retains bounded fifteen-minute usage aggregates. Read the [pool guide](/guide/sub2api-pool) before enabling two gateway targets.
 
 ## Alerts and SMS
 

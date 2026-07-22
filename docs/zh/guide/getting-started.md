@@ -18,7 +18,8 @@ description: 启动 CPA Orbit 并导入第一份订阅。
 | Go | 1.25 | Monitor API 与桌面宿主 |
 | Node.js | 20 | Vue 控制台构建 |
 | WebView2 | Windows 10/11 | 桌面端渲染 |
-| CLIProxyAPI | 可选 | CPA 代理能力 |
+| Sub2API | 推荐 | 主订阅号池、调度与用量记录 |
+| CLIProxyAPI | 可选 | 轻量 CPA 兜底 |
 
 ## 启动工作区
 
@@ -34,12 +35,16 @@ cd CPA_Orbit
 | Monitor API | `http://127.0.0.1:8080/api` |
 | CLIProxyAPI | `http://127.0.0.1:8317/v1` |
 
-## 配置与导入
+## 配置主号池
+
+打开“号池运维”，新增 Sub2API 目标，写入管理员密钥并设为主网关。本机目标优先；远程目标必须显式允许并使用 HTTPS。归属、兜底、迁移和 Token 留存规则见 [Sub2API 订阅号池](/zh/guide/sub2api-pool)。
+
+## 配置 CPA 与导入
 
 在“设置”中确认本地 `base_url`、`cpa/auths` 目录和 CLIProxyAPI 客户端密钥。保存后的密钥只由后端持有。
 
 ```text
-选择 JSON → 归档到 k12/MMDD → 投影到 cpa/auths → 健康检查
+选择 JSON → 归档到 k12/MMDD → 部署到 Sub2API → 主池失败时尝试 CPA 兜底
 ```
 
 ::: warning 敏感文件

@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"cpa-monitor/server/internal/controlplane"
@@ -17,7 +18,7 @@ import (
 	"cpa-monitor/server/internal/model"
 )
 
-var ErrPrimaryBindingExists = errors.New("subscription already has an active primary gateway binding")
+var ErrActiveBindingExists = errors.New("subscription already has an active gateway binding; migrate it instead")
 
 type SubscriptionSource interface {
 	Get(string) (model.Subscription, bool)
@@ -30,6 +31,7 @@ type Coordinator struct {
 	store   *controlplane.Store
 	source  SubscriptionSource
 	factory AdapterFactory
+	mu      sync.Mutex
 }
 
 func NewCoordinator(store *controlplane.Store, source SubscriptionSource, factory AdapterFactory) *Coordinator {
@@ -37,6 +39,8 @@ func NewCoordinator(store *controlplane.Store, source SubscriptionSource, factor
 }
 
 func (c *Coordinator) UpsertTarget(ctx context.Context, target controlplane.GatewayTarget) (controlplane.GatewayTarget, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if err := ValidateTarget(target); err != nil {
 		return controlplane.GatewayTarget{}, err
 	}
@@ -109,6 +113,12 @@ func ValidateTarget(target controlplane.GatewayTarget) error {
 }
 
 func (c *Coordinator) DeployDefault(ctx context.Context, subscriptionID string) (controlplane.DeploymentBinding, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.deployDefault(ctx, subscriptionID)
+}
+
+func (c *Coordinator) deployDefault(ctx context.Context, subscriptionID string) (controlplane.DeploymentBinding, error) {
 	targets, err := c.store.ListGatewayTargets(ctx)
 	if err != nil {
 		return controlplane.DeploymentBinding{}, err
@@ -123,7 +133,7 @@ func (c *Coordinator) DeployDefault(ctx context.Context, subscriptionID string) 
 	if primary == nil {
 		return controlplane.DeploymentBinding{}, errors.New("no enabled primary gateway target is configured")
 	}
-	binding, primaryErr := c.Deploy(ctx, subscriptionID, primary.ID)
+	binding, primaryErr := c.deploy(ctx, subscriptionID, primary.ID)
 	if primaryErr == nil {
 		return binding, nil
 	}
@@ -131,7 +141,7 @@ func (c *Coordinator) DeployDefault(ctx context.Context, subscriptionID string) 
 		if !target.Enabled || target.Primary || target.Kind != string(gateways.KindCPA) {
 			continue
 		}
-		binding, fallbackErr := c.Deploy(ctx, subscriptionID, target.ID)
+		binding, fallbackErr := c.deploy(ctx, subscriptionID, target.ID)
 		if fallbackErr == nil {
 			return binding, nil
 		}
@@ -140,6 +150,12 @@ func (c *Coordinator) DeployDefault(ctx context.Context, subscriptionID string) 
 }
 
 func (c *Coordinator) Deploy(ctx context.Context, subscriptionID string, targetID int64) (controlplane.DeploymentBinding, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.deploy(ctx, subscriptionID, targetID)
+}
+
+func (c *Coordinator) deploy(ctx context.Context, subscriptionID string, targetID int64) (controlplane.DeploymentBinding, error) {
 	target, err := c.store.GatewayTarget(ctx, targetID)
 	if err != nil {
 		return controlplane.DeploymentBinding{}, err
@@ -147,15 +163,13 @@ func (c *Coordinator) Deploy(ctx context.Context, subscriptionID string, targetI
 	if !target.Enabled {
 		return controlplane.DeploymentBinding{}, errors.New("gateway target is disabled")
 	}
-	if target.Primary {
-		bindings, listErr := c.store.ListDeploymentBindings(ctx, subscriptionID)
-		if listErr != nil {
-			return controlplane.DeploymentBinding{}, listErr
-		}
-		for _, binding := range bindings {
-			if binding.TargetID != targetID && binding.Mode == "primary" && binding.DesiredState == "active" && binding.ObservedState == "active" {
-				return controlplane.DeploymentBinding{}, ErrPrimaryBindingExists
-			}
+	bindings, listErr := c.store.ListDeploymentBindings(ctx, subscriptionID)
+	if listErr != nil {
+		return controlplane.DeploymentBinding{}, listErr
+	}
+	for _, binding := range bindings {
+		if binding.TargetID != targetID && binding.DesiredState == "active" && binding.ObservedState == "active" {
+			return controlplane.DeploymentBinding{}, ErrActiveBindingExists
 		}
 	}
 	credential, err := c.source.GatewayCredential(subscriptionID)
@@ -215,8 +229,19 @@ func (c *Coordinator) Deploy(ctx context.Context, subscriptionID string, targetI
 }
 
 func (c *Coordinator) Adopt(ctx context.Context, subscriptionID string, targetID int64, remoteAccountID string) (controlplane.DeploymentBinding, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if _, ok := c.source.Get(subscriptionID); !ok {
 		return controlplane.DeploymentBinding{}, errors.New("subscription was not found")
+	}
+	bindings, err := c.store.ListDeploymentBindings(ctx, subscriptionID)
+	if err != nil {
+		return controlplane.DeploymentBinding{}, err
+	}
+	for _, binding := range bindings {
+		if binding.TargetID != targetID && binding.DesiredState == "active" && binding.ObservedState == "active" {
+			return controlplane.DeploymentBinding{}, ErrActiveBindingExists
+		}
 	}
 	target, err := c.store.GatewayTarget(ctx, targetID)
 	if err != nil {
@@ -231,6 +256,12 @@ func (c *Coordinator) Adopt(ctx context.Context, subscriptionID string, targetID
 }
 
 func (c *Coordinator) Detach(ctx context.Context, subscriptionID string, targetID int64) (controlplane.DeploymentBinding, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.detach(ctx, subscriptionID, targetID)
+}
+
+func (c *Coordinator) detach(ctx context.Context, subscriptionID string, targetID int64) (controlplane.DeploymentBinding, error) {
 	binding, err := c.store.DeploymentBinding(ctx, subscriptionID, targetID)
 	if err != nil {
 		return controlplane.DeploymentBinding{}, err
@@ -274,17 +305,19 @@ func (c *Coordinator) Detach(ctx context.Context, subscriptionID string, targetI
 // Migrate detaches the source before activating the destination. If destination
 // deployment fails, Orbit attempts to restore the source binding.
 func (c *Coordinator) Migrate(ctx context.Context, subscriptionID string, fromTargetID, toTargetID int64) (controlplane.DeploymentBinding, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if fromTargetID == toTargetID {
-		return c.Deploy(ctx, subscriptionID, toTargetID)
+		return c.deploy(ctx, subscriptionID, toTargetID)
 	}
-	if _, err := c.Detach(ctx, subscriptionID, fromTargetID); err != nil {
+	if _, err := c.detach(ctx, subscriptionID, fromTargetID); err != nil {
 		return controlplane.DeploymentBinding{}, fmt.Errorf("detach source gateway: %w", err)
 	}
-	binding, err := c.Deploy(ctx, subscriptionID, toTargetID)
+	binding, err := c.deploy(ctx, subscriptionID, toTargetID)
 	if err == nil {
 		return binding, nil
 	}
-	if _, rollbackErr := c.Deploy(ctx, subscriptionID, fromTargetID); rollbackErr != nil {
+	if _, rollbackErr := c.deploy(ctx, subscriptionID, fromTargetID); rollbackErr != nil {
 		return controlplane.DeploymentBinding{}, fmt.Errorf("destination deployment failed and source rollback failed")
 	}
 	return controlplane.DeploymentBinding{}, fmt.Errorf("destination deployment failed; source binding restored: %w", err)
@@ -299,6 +332,8 @@ func (c *Coordinator) Bindings(ctx context.Context, subscriptionID string) ([]co
 // bindings only clear the local relationship because adapters treat them as
 // non-owned resources.
 func (c *Coordinator) DetachAll(ctx context.Context, subscriptionID string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	bindings, err := c.store.ListDeploymentBindings(ctx, subscriptionID)
 	if err != nil {
 		return err
@@ -307,7 +342,15 @@ func (c *Coordinator) DetachAll(ctx context.Context, subscriptionID string) erro
 		if binding.DesiredState != "active" && binding.ObservedState != "active" {
 			continue
 		}
-		if _, err := c.Detach(ctx, subscriptionID, binding.TargetID); err != nil {
+		if strings.TrimSpace(binding.RemoteAccountID) == "" && binding.ObservedState != "active" {
+			now := time.Now().UTC()
+			binding.DesiredState, binding.ObservedState, binding.LastError, binding.LastSyncedAt = "detached", "detached", "", &now
+			if _, err := c.store.UpsertDeploymentBinding(ctx, binding); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := c.detach(ctx, subscriptionID, binding.TargetID); err != nil {
 			return fmt.Errorf("detach target %d: %w", binding.TargetID, err)
 		}
 	}

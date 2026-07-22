@@ -17,7 +17,7 @@ The same OAuth refresh credential must also not be active in CPA and Sub2API by 
 - A gateway target owns its runtime scheduling and refreshed credential state.
 - A deployment binding records the desired and observed relationship between one subscription and one gateway target.
 - Only objects explicitly marked `managed` may be changed or deleted automatically by CPA Orbit. Adopted or external objects are observed without destructive reconciliation.
-- Refreshable OAuth credentials have one `primary` runtime binding. CPA is the lightweight fallback; Sub2API is the default primary target for new compatible imports.
+- Refreshable OAuth credentials have at most one active runtime binding by default. Its role is `primary` or `fallback`; CPA is the lightweight fallback and Sub2API is the default primary target for new compatible imports. Switching targets uses migration rather than active-active copying.
 - CPA and Sub2API are integrated through adapters. Neither management protocol is made to impersonate the other.
 - Relational control-plane state and bounded aggregate usage snapshots are stored in local SQLite. Raw credential JSON remains in the protected archive and is never copied into public API responses or usage tables.
 
@@ -51,4 +51,3 @@ The same OAuth refresh credential must also not be active in CPA and Sub2API by 
 - [ADR-0001](0001-subscriptions-as-runtime-source-of-truth.md)
 - [Architecture dossier](../README.md)
 - [Sub2API](https://github.com/Wei-Shaw/sub2api)
-

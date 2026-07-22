@@ -18,7 +18,8 @@ All services bind to `127.0.0.1` by default. Do not expose them directly to an u
 | Go | 1.25 | Monitor API and desktop host |
 | Node.js | 20 | Vue console build |
 | WebView2 | Windows 10/11 | Desktop rendering |
-| CLIProxyAPI | Optional | CPA proxy capabilities |
+| Sub2API | Recommended | Primary subscription pool, scheduling, and usage records |
+| CLIProxyAPI | Optional | Lightweight CPA fallback |
 
 ## Start the workspace
 
@@ -46,10 +47,14 @@ http://127.0.0.1:8080/api/health
 
 Open **Settings** and confirm the local base URL, the `cpa/auths` directory, and the CLIProxyAPI client key. Saved keys remain backend-only; the browser receives only a configured flag.
 
+## Configure the primary pool
+
+Open **Pool operations**, add a Sub2API target, save its write-only administrator key, and mark it primary. A local target is recommended; remote targets require explicit approval and HTTPS. See [Sub2API subscription pools](/guide/sub2api-pool) for ownership, fallback, migration, and Token retention rules.
+
 ## Import a subscription
 
 ```text
-Select JSON → archive under k12/MMDD → project to cpa/auths → run health check
+Select JSON → archive under k12/MMDD → deploy to Sub2API → CPA fallback when primary import fails
 ```
 
 Single-file imports may record an acquisition price. Identity is based on normalized full JSON content rather than a filename or email address.

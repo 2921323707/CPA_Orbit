@@ -320,6 +320,11 @@ func (s *Store) UpsertGatewayTarget(ctx context.Context, target GatewayTarget) (
 		if _, err := s.db.ExecContext(ctx, `UPDATE gateway_targets SET is_primary=0, updated_at=? WHERE id<>? AND is_primary=1`, formatTime(now), target.ID); err != nil {
 			return GatewayTarget{}, fmt.Errorf("enforce primary gateway target: %w", err)
 		}
+		if _, err := s.db.ExecContext(ctx, `UPDATE deployment_bindings SET mode=CASE WHEN target_id=? THEN 'primary' ELSE 'fallback' END, updated_at=? WHERE mode IN ('primary','fallback')`, target.ID, formatTime(now)); err != nil {
+			return GatewayTarget{}, fmt.Errorf("reclassify gateway bindings: %w", err)
+		}
+	} else if _, err := s.db.ExecContext(ctx, `UPDATE deployment_bindings SET mode='fallback', updated_at=? WHERE target_id=? AND mode='primary'`, formatTime(now), target.ID); err != nil {
+		return GatewayTarget{}, fmt.Errorf("reclassify disabled primary bindings: %w", err)
 	}
 	return s.gatewayTarget(ctx, target.ID, false)
 }
