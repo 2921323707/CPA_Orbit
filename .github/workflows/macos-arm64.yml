@@ -39,7 +39,7 @@ jobs:
         run: ./app/build-macos.sh
       - name: Verify application architecture
         run: test "$(lipo -archs 'app/build/bin/CPA Orbit.app/Contents/MacOS/CPAOrbit')" = arm64
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: CPAOrbit-macos-arm64
           path: |
