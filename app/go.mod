@@ -1,12 +1,12 @@
 module CPAOrbit
 
-go 1.25.0
+go 1.26.0
 
 require (
 	cpa-monitor/server v0.0.0
 	github.com/getlantern/systray v1.2.2
-	github.com/wailsapp/wails/v2 v2.13.0
-	golang.org/x/sys v0.47.0
+	github.com/wailsapp/wails/v2 v2.15.0
+	golang.org/x/sys v0.48.0
 )
 
 require (
@@ -47,9 +47,9 @@ require (
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/wailsapp/go-webview2 v1.0.22 // indirect
 	github.com/wailsapp/mimetype v1.4.1 // indirect
-	golang.org/x/crypto v0.51.0 // indirect
-	golang.org/x/net v0.54.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/crypto v0.53.0 // indirect
+	golang.org/x/net v0.56.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 	modernc.org/libc v1.74.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
